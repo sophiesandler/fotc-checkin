@@ -542,10 +542,14 @@ def page_settings():
     ret = st.selectbox("What happens to recordings?", keep, index=keep.index(db.get_setting("audio_retention", "after_read")) if db.get_setting("audio_retention", "after_read") in keep else 1,
                        format_func=ct.RETENTION.get, help="The consent text says recordings are deleted after transcription. Pick the rule that matches what you promised Mentors.")
     with st.expander("How to set up automatic transcription"):
-        st.markdown("1. Create an account with a speech-to-text service and get an API key. The app supports OpenAI's transcription service.\n"
-                    "2. In Streamlit, open **Manage app > Settings > Secrets** and add a line: `OPENAI_API_KEY = \"your key\"`.\n"
-                    "3. Save and reboot. The status above should say Ready.\n\n"
-                    "The service charges per minute of audio. **Recordings are sent to that service, so get Friends of the Children's approval before using real recordings.**")
+        st.markdown("**Free option (recommended to start): Groq**\n"
+                    "1. Go to console.groq.com and create an account. No credit card is needed.\n"
+                    "2. Open **API Keys**, create a key, and copy it.\n"
+                    "3. In Streamlit, open **Manage app > Settings > Secrets** and add a line: `GROQ_API_KEY = \"your key\"`.\n"
+                    "4. Save and reboot. The status above should say Ready.\n\n"
+                    "The free plan has daily limits (about 8 hours of audio a day at the time of writing), which is far more than a pilot needs.\n\n"
+                    "**Paid option: OpenAI.** Add `OPENAI_API_KEY = \"your key\"` the same way. It charges per minute of audio. If both keys are set, the free one is used first.\n\n"
+                    "**Recordings are sent to that service, so get Friends of the Children's approval, and read the service's data terms, before using real recordings.**")
     consent = st.text_area("Welcome and consent text (Mentors see this first)", db.get_setting("consent_text"), height=260)
     thanks = st.text_area("Thank-you message", db.get_setting("thanks_text"), height=140)
     st.caption("Friends of the Children staff and legal review should approve the consent text before any real use.")

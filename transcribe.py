@@ -1,8 +1,9 @@
 """Automatic transcription of recorded answers.
 
-Providers (the first one that is set up is used):
-  openai  an online speech-to-text service. Needs OPENAI_API_KEY in the app's secrets. Pay per use. Audio leaves this app, so
+Providers (the first one that is set up is used, in this order):
+  groq    a free online speech-to-text service (rate limited). Needs GROQ_API_KEY in the app's secrets. Audio leaves this app, so
           Friends of the Children must approve it before real recordings are sent.
+  openai  a paid online speech-to-text service. Needs OPENAI_API_KEY in the app's secrets. Pay per use. Same approval needed.
   local   the free faster-whisper library, if it is installed on the server. Audio never leaves the app. It does not install on the
           free Streamlit hosting, so it is mainly for self-hosting or testing on a laptop.
 Error messages here never include keys or audio."""
@@ -29,6 +30,8 @@ def _secret(name, default=""):
 
 def providers():
     out = []
+    if _secret("GROQ_API_KEY"):
+        out.append("groq")
     if _secret("OPENAI_API_KEY"):
         out.append("openai")
     try:
@@ -42,8 +45,8 @@ def providers():
 def status_line():
     p = providers()
     if not p:
-        return "Not set up. Add an OPENAI_API_KEY secret to turn it on (see Settings)."
-    return "Ready (" + ", ".join({"openai": "online service", "local": "this server"}[x] for x in p) + ")"
+        return "Not set up. Add a GROQ_API_KEY (free) or OPENAI_API_KEY secret to turn it on (see Settings)."
+    return "Ready (" + ", ".join({"groq": "free online service", "openai": "paid online service", "local": "this server"}[x] for x in p) + ")"
 
 
 @st.cache_resource
@@ -58,25 +61,53 @@ def transcribe(audio, provider=None):
     if not provs:
         return "", "Automatic transcription is not set up yet."
     provider = provider if provider in provs else provs[0]
+    if provider == "groq":
+        return _compatible("https://api.groq.com/openai/v1/audio/transcriptions", _secret("GROQ_API_KEY"),
+                           [m for m in (_secret("GROQ_TRANSCRIBE_MODEL"), "whisper-large-v3-turbo", "whisper-large-v3") if m], "Groq", audio)
     if provider == "openai":
-        try:
-            r = requests.post("https://api.openai.com/v1/audio/transcriptions", headers={"Authorization": f"Bearer {_secret('OPENAI_API_KEY')}"},
-                              files={"file": ("answer.wav", audio, "audio/wav")},
-                              data={"model": _secret("TRANSCRIBE_MODEL", "whisper-1"), "language": "en", "prompt": VOCAB}, timeout=120)
-        except Exception as e:
-            return "", f"Could not reach the transcription service ({type(e).__name__})."
-        if r.status_code != 200:
-            return "", f"The transcription service refused the request (code {r.status_code}). Check the key and the account balance."
-        try:
-            return (r.json().get("text") or "").strip(), ""
-        except Exception:
-            return "", "The transcription service sent a reply this app could not read."
+        # OpenAI is replacing whisper-1 with newer models, so try the newer one first and fall back to the older one.
+        return _compatible("https://api.openai.com/v1/audio/transcriptions", _secret("OPENAI_API_KEY"),
+                           [m for m in (_secret("TRANSCRIBE_MODEL"), "gpt-transcribe", "whisper-1") if m], "OpenAI", audio)
     try:
         model = _local_model()
         segs, _ = model.transcribe(io.BytesIO(audio), language="en", vad_filter=True, initial_prompt=VOCAB)
         return " ".join(s.text.strip() for s in segs).strip(), ""
     except Exception as e:
         return "", f"Local transcription failed ({type(e).__name__})."
+
+
+def _compatible(url, key, models, name, audio):
+    """Call a speech-to-text service that follows OpenAI's request format. Tries each model in turn. Returns (text, error)."""
+    seen, last = [], f"The {name} transcription service did not accept the request."
+    for m in models:
+        if m in seen:
+            continue
+        seen.append(m)
+        data = {"model": m}
+        if m.startswith("whisper") or m.startswith("gpt-4o"):
+            data.update(language="en", prompt=VOCAB)
+        try:
+            r = requests.post(url, headers={"Authorization": f"Bearer {key}"}, files={"file": ("answer.wav", audio, "audio/wav")}, data=data, timeout=120)
+        except Exception as e:
+            return "", f"Could not reach the {name} service ({type(e).__name__})."
+        if r.status_code == 200:
+            try:
+                text = (r.json().get("text") or "").strip()
+            except Exception:
+                return "", f"The {name} service sent a reply this app could not read."
+            if text:
+                return text, ""
+            last = "The service returned no words. The recording may be silent."
+            continue
+        if r.status_code in (400, 404, 422):      # this model is not available or does not accept the settings: try the next one
+            last = f"The {name} service refused the request (code {r.status_code})."
+            continue
+        if r.status_code == 401:
+            return "", f"The {name} key was not accepted (code 401). Check the key in your secrets."
+        if r.status_code == 429:
+            return "", f"The {name} service says a limit was reached (code 429). Wait a while and try again, or check the account's limits and billing."
+        return "", f"The {name} service returned an error (code {r.status_code})."
+    return "", last
 
 
 def retention():
