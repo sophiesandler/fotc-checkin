@@ -15,7 +15,7 @@ SECTIONS = [
         ("pilot", "🧭", "Pilot year", "Progress through the pilot at a glance.", ("leader", "admin")),
         ("dashboard", "📊", "Dashboard", "Results and trends by theme.", ("leader", "admin")),
         ("risk", "🤝", "Support signals", "Where Mentors may need extra support.", ("leader", "admin")),
-        ("answers", "💬", "Answers", "Read what Mentors said, and tag themes.", ("admin",)),
+        ("review", "🚩", "Review queue", "Only AI-flagged answers and anything automation missed.", ("admin",)),
     ]),
     ("Edit the tool", "Change what Mentors are asked and who has access.", [
         ("questions", "✏️", "Questions", "Change the prompts and wording.", ("leader", "admin")),
@@ -47,30 +47,25 @@ def _safe(fn, default):
 
 # ---------------------------------------------------------------- what needs attention
 def attention_items():
-    """Return a list of (count, text, page key, urgent). Only items with something to do are returned."""
+    """Return a list of (count, text, page key, urgent). Only items with something to do are returned.
+    Transcription and tagging are automatic, so answers are never listed just for being unread."""
     items = []
+    q = _safe(pl.review_items, dict(flags=[], checks=[], problems=[]))
 
-    rows = _safe(db.spoken_responses, [])
-    reviewed = _safe(lambda: {r["response_id"] for r in db.get_reviews() if r["reviewed"]}, set())
-    flagged = _safe(lambda: {t["response_id"] for t in db.get_tags() if t["escalation"]}, set())
-
-    open_flags = [i for i in flagged if i not in reviewed]
+    open_flags = [f for f in q["flags"] if not f["handled"]]
     if open_flags:
         n = len(open_flags)
-        items.append((n, f"{n} answer{'s' if n != 1 else ''} raised a safety or welfare concern. Read and follow up.", "answers", True))
+        items.append((n, f"{n} answer{'s' if n != 1 else ''} flagged by the AI as needing support. Follow up.", "review", True))
+
+    if q["problems"]:
+        items.append((len(q["problems"]), "Automatic transcription or tagging is not fully working: " + q["problems"][0], "settings", True))
 
     if _safe(db.using_default_password, False):
         items.append((1, "The app is still using the starting practice password. Set a private one before real use.", "account", True))
 
-    unread = [r for r in rows if r["id"] not in reviewed]
-    if unread:
-        n = len(unread)
-        items.append((n, f"{n} answer{'s' if n != 1 else ''} waiting to be read.", "answers", False))
-
-    need_t, need_g = _safe(pl.waiting, (0, 0))
-    if need_t or need_g:
-        n = need_t + need_g
-        items.append((n, f"{n} answer{'s' if n != 1 else ''} waiting to be transcribed or tagged.", "answers", False))
+    if q["checks"]:
+        n = len(q["checks"])
+        items.append((n, f"{n} answer{'s' if n != 1 else ''} the automatic steps could not finish, or the AI asked a person to check.", "review", False))
 
     def _unfinished():
         sess = pd.DataFrame(db.get_sessions())

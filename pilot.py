@@ -270,7 +270,7 @@ def _baseline(data, all_seasons, sel, k):
 def _said(data, sel, k, admin):
     a = data["answers"][data["answers"]["season"] == sel].copy()
     ui.section("What Mentors said", "A summary of the spoken answers this season, with excerpts the admin chose for leadership. Names are removed. "
-               + ("To read, tag, and star individual answers, open the Answers page." if admin else "The program admin reads every answer and chooses which excerpts to share."))
+               + ("To look up an individual answer or choose excerpts, open the Review queue and use the optional lookup." if admin else "The program admin reads every answer and chooses which excerpts to share."))
     if a.empty:
         st.info("No spoken answers this season yet.")
         return
@@ -376,7 +376,7 @@ def _feedback(data, sel, k, admin, user, example):
     else:
         st.info(f"Each statement needs at least {k} answers to be shown.")
     if admin:
-        st.caption("Read comments about the check-in on the Answers page by choosing question P04.")
+        st.caption("Read comments about the check-in in the Review queue's optional lookup by choosing question P04.")
 
 
 def _readiness(data, all_seasons, k):

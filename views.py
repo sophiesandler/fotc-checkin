@@ -537,10 +537,10 @@ def page_settings():
     ui.section("Recordings and transcription", "Choose how recorded answers become text, and how long recordings are kept. Transcripts are kept either way.", level=3)
     st.caption("Automatic transcription: " + tr.status_line())
     auto_t = st.selectbox("Transcribe automatically when a Mentor finishes?", ["No", "Yes"], index=1 if db.get_setting("auto_transcribe", "No") == "Yes" else 0,
-                          help="Needs the transcription service to be set up. If it fails, the answer is saved and the admin can transcribe it on the Answers page.")
+                          help="Needs the transcription service to be set up. If it fails, the answer is saved, retried automatically, and then listed on the Review queue for a person to check.")
     st.caption("Automatic tagging: " + pl.tagging_status())
     auto_g = st.selectbox("Tag answers with themes automatically?", ["No", "Yes"], index=1 if db.get_setting("auto_tag", "No") == "Yes" else 0,
-                          help="After a Mentor finishes, each answer is transcribed (if needed) and tagged with themes in the background. The admin can review and correct tags on the Answers page.")
+                          help="After a Mentor finishes, each answer is transcribed (if needed) and tagged with themes in the background. Answers the AI flags for support, or that could not be tagged, are listed on the Review queue.")
     keep = list(ct.RETENTION)
     ret = st.selectbox("What happens to recordings?", keep, index=keep.index(db.get_setting("audio_retention", "after_read")) if db.get_setting("audio_retention", "after_read") in keep else 1,
                        format_func=ct.RETENTION.get, help="The consent text says recordings are deleted after transcription. Pick the rule that matches what you promised Mentors.")
@@ -603,8 +603,8 @@ Use the switch at the top of each page to look at live check-ins or the clearly 
 ### Changing the themes and rules
 Open **Themes and rules** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
 
-### Answers
-Open **Answers** for everything Mentors said. For each answer: listen and check the transcript, tag its themes, read it, and star standout excerpts for leadership. Automatic transcription and tagging can do much of this for you once they are set up in **Settings**.
+### Review queue
+Transcription and tagging run by themselves once they are set up in **Settings**, so you do not read every answer. Open **Review queue** only when it shows something: an answer the AI flagged as needing support (follow up, then mark it followed up), or an answer the automatic steps could not finish (check the transcript against the recording, or try again). If automatic processing stops working, the Home screen and the queue both say so.
 
 ### Pilot year
 During year one, start on **Pilot year**: check that the check-in works (participation, time, skipped questions), see what Mentors said, and record what you did about each concern under **You said, we did**.
@@ -619,7 +619,7 @@ Open **Launch checklist** to see what is still needed: approvals, testing, setup
 
 ### Looking after people and privacy
 - **People**: add Mentors, set exit interviews, reset passwords.
-- **Answers** shows individual answers. Opening it and playing recordings are logged under **Activity log**.
+- **Review queue** shows individual answers. Opening it and playing recordings are logged under **Activity log**.
 - **My account** lets you change your own password.
 - Never share individual answers with a Mentor's supervisor. Use them only to offer support.""",
 }

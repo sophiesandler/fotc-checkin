@@ -1,9 +1,10 @@
 """The automatic pipeline: recording -> transcript -> themes. Runs in the background after a Mentor finishes, and on demand from the
-Answers page. Tagging uses Claude (paid, best quality) or a free Groq-hosted model. Every tag must pass the same checks as a hand-made
+Review queue. Tagging uses Claude (paid, best quality) or a free Groq-hosted model. Every tag must pass the same checks as a hand-made
 tag: valid theme, and a quote that is an exact excerpt of the answer. Nothing here ever shows keys or answer text in error messages."""
 import json
 import os
 import re
+import datetime
 import threading
 import time
 
@@ -51,6 +52,16 @@ def parse_reply(reply, source_text, theme_ids):
             errs.append("An escalation flag has an unknown category.")
         flags.append(e)
     return errs, rows, flags
+
+
+def ai_review_note(reply):
+    """Did the tagger ask a person to check this answer? Returns (needs_review, short reason, flag category names)."""
+    try:
+        data = json.loads(extract_json(re.sub(r"^```(?:json)?|```$", "", (reply or "").strip(), flags=re.MULTILINE)))
+    except Exception:
+        return False, "", []
+    cats = [str(e.get("category", "")).replace("_", " ") for e in (data.get("escalation_flags") or []) if isinstance(e, dict)]
+    return bool(data.get("needs_human_review")), str(data.get("review_reason") or "")[:200], cats
 
 
 def message(qid, qtext, rid, text):
@@ -138,20 +149,36 @@ def tag_one(rid, qid, qtext, text, who, codebook, ver, provider=None):
     for attempt in range(2):
         reply, err = (_call_claude if provider == "claude" else _call_groq)(system, msg)
         if err:
+            _record_failure(rid, "tag", err)
             return False, err
         errs, tags, flags = parse_reply(reply, text, ids)
         if not errs:
             if not tags and not flags:
+                db.set_proc(int(rid), "tag", "no_themes", "No themes found (a very short answer, perhaps).")
                 return False, "No themes found (a very short answer, perhaps)."
             db.add_tags(int(rid), tags, f"auto:{provider}", escalation=bool(flags))
             db.log(who, "tagged an answer automatically", f"response {rid} by {provider}: {len(tags)} tag(s), escalation={bool(flags)}")
+            needs, why, cats = ai_review_note(reply)
+            if flags:
+                db.set_proc(int(rid), "tag", "flag", ", ".join(c for c in cats if c) or "safety or support concern")
+            elif needs:
+                db.set_proc(int(rid), "tag", "review", why or "The tagger asked for a person to check this answer.")
+            else:
+                db.clear_proc(int(rid))
             return True, "Tagged."
         last = errs[0]
         msg = message(qid, qtext, rid, text) + f"\nYour previous reply had a problem: {errs[0]} Copy quotes exactly from the transcript. Return corrected JSON only."
+    _record_failure(rid, "tag", last)
     return False, last
 
 
 # ---------------------------------------------------------------- the pipeline
+def _record_failure(rid, stage, message_):
+    """Remember that automatic processing could not finish this answer. Rate limits are temporary and are retried later."""
+    transient = "limit was reached" in message_ or "Could not reach" in message_
+    db.set_proc(int(rid), stage, "retry" if transient else "failed", message_, count_attempt=not transient)
+
+
 def _find(rid):
     return next((r for r in db.spoken_responses() if r["id"] == rid), None)
 
@@ -167,7 +194,9 @@ def process_response(rid, who="system", do_transcribe=True, do_tag=True):
         ok, m = tr.transcribe_response(rid, who)
         out.append(m if not ok else "Transcribed.")
         if not ok:
+            _record_failure(rid, "transcribe", m)
             return out
+        db.clear_proc(rid)
         r = _find(rid)
         text = (r["transcript"] or "").strip()
     if text and do_tag and tagging_providers() and rid not in db.tagged_ids():
@@ -206,14 +235,132 @@ def start_background(sid):
     threading.Thread(target=process_session, args=(sid,), daemon=True).start()
 
 
+def _text_of(r):
+    return (r["transcript"] or r["text_answer"] or "").strip()
+
+
 def waiting():
-    """Counts of answers that still need a step: (needs transcript, needs tags)."""
+    """Counts of answers that still need a step: (needs transcript, needs tags). Answers with nothing to tag are not counted."""
     done = db.tagged_ids()
+    skip = {p["response_id"] for p in db.get_proc() if p["result"] in ("no_themes", "dismissed")}
     need_t = need_g = 0
     for r in db.spoken_responses():
-        text = (r["transcript"] or r["text_answer"] or "").strip()
-        if not text and r["audio_note"] == "recorded":
+        text = _text_of(r)
+        if not text and r["audio_note"] == "recorded" and r["id"] not in skip:
             need_t += 1
-        elif text and r["id"] not in done:
+        elif text and r["id"] not in done and r["id"] not in skip:
             need_g += 1
     return need_t, need_g
+
+
+# ---------------------------------------------------------------- is the automation working?
+def automation_problems():
+    """Plain-language reasons the automatic steps are not running. An empty list means transcription and tagging are both on and ready."""
+    out = []
+    if db.get_setting("auto_transcribe", "No") != "Yes":
+        out.append("Automatic transcription is turned off in Settings.")
+    elif not tr.providers():
+        out.append("Automatic transcription has no service set up (add a GROQ_API_KEY or OPENAI_API_KEY secret).")
+    if db.get_setting("auto_tag", "No") != "Yes":
+        out.append("Automatic tagging is turned off in Settings.")
+    elif not tagging_providers():
+        out.append("Automatic tagging has no service set up (add a GROQ_API_KEY or ANTHROPIC_API_KEY secret).")
+    return out
+
+
+def _age_minutes(ts):
+    try:
+        t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+        return (datetime.datetime.now(datetime.timezone.utc) - t).total_seconds() / 60
+    except Exception:
+        return 0
+
+
+# ---------------------------------------------------------------- the review queue
+def review_items(grace=10):
+    """Everything a person needs to look at. Nothing else is ever put in front of the admin.
+    flags:  the AI found a safety, welfare, or support concern (needs follow-up)
+    checks: the AI asked for a person to check, or the automation could not finish the answer
+    problems: why the automation itself is not working (shown once, not once per answer)"""
+    rows = db.spoken_responses()
+    proc = {p["response_id"]: p for p in db.get_proc()}
+    tagged = db.tagged_ids()
+    handled = {r["response_id"] for r in db.get_reviews() if r["reviewed"]}
+    esc = {t["response_id"] for t in db.get_tags() if t["escalation"]}
+    problems = automation_problems()
+    tr_on = db.get_setting("auto_transcribe", "No") == "Yes" and bool(tr.providers())
+    tag_on = db.get_setting("auto_tag", "No") == "Yes" and bool(tagging_providers())
+    flags, checks = [], []
+    for r in rows:
+        rid = r["id"]
+        p = proc.get(rid) or {}
+        base = dict(id=rid, mentor=r["participant_code"], season=r["season"] or "", qid=r["question_id"], row=r)
+        text = _text_of(r)
+        age = _age_minutes(r["ts"])
+        if rid in esc:
+            flags.append(dict(base, handled=rid in handled, detail=p.get("detail", "") if p.get("result") == "flag" else "safety or support concern"))
+            continue
+        if p.get("result") == "review":
+            if rid not in handled:
+                checks.append(dict(base, kind="The AI asked a person to check this answer", detail=p.get("detail", "")))
+            continue
+        if p.get("result") in ("no_themes", "dismissed"):
+            continue
+        if not text and r["audio_note"] == "recorded":
+            if p.get("result") == "failed":
+                checks.append(dict(base, kind="Transcription failed", detail=p.get("detail", "")))
+            elif tr_on and age > grace:
+                checks.append(dict(base, kind="Still not transcribed", detail="It has been waiting more than %d minutes." % grace))
+        elif text and rid not in tagged:
+            if p.get("result") == "failed":
+                checks.append(dict(base, kind="Tagging failed", detail=p.get("detail", "")))
+            elif tag_on and age > grace:
+                checks.append(dict(base, kind="Still not tagged", detail="It has been waiting more than %d minutes." % grace))
+    flags.sort(key=lambda x: x["handled"])
+    return dict(flags=flags, checks=checks, problems=problems)
+
+
+# ---------------------------------------------------------------- self-healing: retry what got stuck
+def sweep(who="system"):
+    """Finish anything the automatic steps missed (a restart, a rate limit). Never raises. Skips answers that keep failing."""
+    try:
+        do_tr = db.get_setting("auto_transcribe", "No") == "Yes"
+        do_tag = db.get_setting("auto_tag", "No") == "Yes"
+        if not (do_tr or do_tag):
+            return
+        proc = {p["response_id"]: p for p in db.get_proc()}
+        tagged = db.tagged_ids()
+        for r in db.spoken_responses():
+            rid = r["id"]
+            p = proc.get(rid) or {}
+            if p.get("result") in ("no_themes", "dismissed") or (p.get("result") == "failed" and (p.get("attempts") or 0) >= 3):
+                continue
+            if _age_minutes(r["ts"]) < 3:
+                continue                                  # the check-in's own background step is probably still running
+            text = _text_of(r)
+            needs = (not text and r["audio_note"] == "recorded" and do_tr) or (text and rid not in tagged and do_tag)
+            if not needs:
+                continue
+            msgs = process_response(rid, who, do_transcribe=do_tr, do_tag=do_tag)
+            if any("limit was reached" in m for m in msgs):
+                break                                     # try again at the next sweep
+    except Exception as e:
+        try:
+            db.log("system", "automatic retry failed", type(e).__name__)
+        except Exception:
+            pass
+
+
+def maybe_sweep(every_minutes=10):
+    """Called when anyone signs in. At most one retry pass every few minutes, in the background."""
+    try:
+        last = db.get_setting("last_sweep", "")
+        if last and _age_minutes(last) < every_minutes:
+            return
+        db.set_setting("last_sweep", db.now())
+        if os.environ.get("FOTC_SYNC") == "1":
+            sweep()
+        else:
+            threading.Thread(target=sweep, daemon=True).start()
+    except Exception:
+        pass

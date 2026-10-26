@@ -11,6 +11,7 @@ import answers
 import launch
 import pilot
 import home
+import pipeline
 from auth import login_screen
 
 
@@ -57,6 +58,7 @@ if not user:
 
 stage = db.get_setting("program_stage", "Pilot year")
 role = user["role"]
+pipeline.maybe_sweep()      # quietly finish anything automatic processing missed (at most every 10 minutes)
 
 
 def _page(fn, title, path):
@@ -68,7 +70,7 @@ P = {
     "pilot": _page(pilot.page_pilot, "Pilot year", "pilot"),
     "dashboard": _page(dashboard.page_dashboard, "Dashboard", "dashboard"),
     "risk": _page(dashboard.page_risk, "Support signals", "support-signals"),
-    "answers": _page(answers.page_answers, "Answers", "answers"),
+    "review": _page(answers.page_review, "Review queue", "review"),
     "questions": _page(views.page_questions, "Questions", "questions"),
     "users": _page(views.page_users, "People", "people"),
     "audit": _page(views.page_audit, "Activity log", "activity"),
@@ -90,10 +92,11 @@ else:
     def _home():
         home.page_home(mine, role)
 
+    st.session_state["_pages"] = mine   # lets pages link to each other
     pg_home = st.Page(_home, title="Home", url_path="home", default=True, icon=":material/home:")
     PAGES = {
         "": [pg_home],
-        "See how it's going": [mine[k] for k in ("pilot", "dashboard", "risk", "answers") if k in mine],
+        "See how it's going": [mine[k] for k in ("pilot", "dashboard", "risk", "review") if k in mine],
         "Edit the tool": [mine[k] for k in ("questions", "users", "audit") if k in mine],
         "Supporting materials": [mine[k] for k in ("guide", "launch", "themes") if k in mine],
         "My account": [mine[k] for k in ("account", "settings") if k in mine],

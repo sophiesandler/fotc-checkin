@@ -47,6 +47,9 @@ sessions = Table("sessions", meta,
 reviews = Table("reviews", meta,
                 Column("response_id", Integer, primary_key=True), Column("by_user", String(80)), Column("ts", String(40)),
                 Column("reviewed", Boolean), Column("starred", Boolean), Column("excerpt", Text))
+proc = Table("processing", meta,
+             Column("response_id", Integer, primary_key=True), Column("ts", String(40)), Column("stage", String(12)),
+             Column("result", String(12)), Column("detail", Text), Column("attempts", Integer))
 actions = Table("actions", meta,
                 Column("id", Integer, primary_key=True, autoincrement=True), Column("ts", String(40)), Column("season", String(20)),
                 Column("raised", Text), Column("action", Text), Column("status", String(20)), Column("owner", String(80)),
@@ -391,3 +394,30 @@ def get_actions():
     _ensure(actions)
     with engine().connect() as c:
         return [dict(r) for r in c.execute(select(actions).order_by(actions.c.id.desc())).mappings()]
+
+
+# ---------------- automatic processing outcomes (what the pipeline did with each answer)
+# result: flag (AI found a safety or support concern), review (AI asked a person to check), failed, retry (try again later),
+#         no_themes (nothing to tag), dismissed (a person checked it and nothing more is needed)
+def set_proc(response_id, stage, result, detail="", count_attempt=False):
+    _ensure(proc)
+    with engine().begin() as c:
+        old = c.execute(select(proc.c.attempts).where(proc.c.response_id == response_id)).first()
+        n = (old[0] or 0) if old else 0
+        vals = dict(ts=now(), stage=stage, result=result, detail=(detail or "")[:300], attempts=n + (1 if count_attempt else 0))
+        if old:
+            c.execute(update(proc).where(proc.c.response_id == response_id).values(**vals))
+        else:
+            c.execute(insert(proc).values(response_id=response_id, **vals))
+
+
+def get_proc():
+    _ensure(proc)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(select(proc)).mappings()]
+
+
+def clear_proc(response_id):
+    _ensure(proc)
+    with engine().begin() as c:
+        c.execute(delete(proc).where(proc.c.response_id == response_id))

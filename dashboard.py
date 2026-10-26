@@ -392,13 +392,13 @@ def _themes(source, v, waves, sel, k):
     names = {t["id"]: t["name"] for t in db.get_published("codebook")[1]["themes"]}
     tg = demo_tags() if source == "demo" else live_tags()
     if tg.empty:
-        st.info("No tagged answers yet. Spoken answers become themes once they are transcribed and tagged. The program admin does this on the **Answers** page. "
+        st.info("No tagged answers yet. Spoken answers become themes once they are transcribed and tagged. This happens automatically once transcription and tagging are turned on in Settings. "
                 "Switch to the demo data above to see how this tab will look.")
     else:
         if source == "demo":
             st.caption("Themes come from synthetic spoken answers tagged for the demo. The quotes are illustrative examples written for the demo, not real Mentors.")
         else:
-            st.caption("Themes come from spoken answers tagged automatically by AI. The program admin can review and correct them on the Answers page.")
+            st.caption("Themes come from spoken answers tagged automatically by AI. Answers the AI flags for support, or that could not be tagged, go to the Review queue for a person.")
         tw = [w for w in waves if w in set(tg["wave"])]
         den = tg.groupby("wave")["mentor"].nunique()
         mode = st.radio("Show", ["What is hard", "What is working"], horizontal=True, key="theme_mode")
