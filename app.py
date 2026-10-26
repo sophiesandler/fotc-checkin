@@ -4,6 +4,7 @@ import streamlit as st
 st.set_page_config(page_title="Mentor check-in (prototype)", layout="wide")
 
 import db
+import ui
 import views
 import dashboard
 from auth import login_screen
@@ -31,6 +32,8 @@ def explain_db_error(e):
                 "and make sure the whole value is inside double quotation marks.")
     return "Check the DATABASE_URL secret for typing mistakes, and that the Supabase project is running."
 
+
+ui.inject_css()
 
 try:
     db.engine()
@@ -68,6 +71,7 @@ PAGES = {
 }
 nav = st.navigation(PAGES[user["role"]])
 with st.sidebar:
+    ui.sidebar_brand()
     st.caption(f"Signed in as **{user['display_name']}**")
     st.caption("Prototype with practice data only.")
     if db.using_sqlite():

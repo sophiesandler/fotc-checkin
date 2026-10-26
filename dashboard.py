@@ -9,7 +9,10 @@ import streamlit as st
 
 import db
 import risk
+import ui
 from auth import require
+
+BLUE_, ORANGE_ = ui.BLUE, ui.ORANGE
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORE, LABEL = risk.CORE, risk.LABEL
@@ -19,6 +22,11 @@ LONG = {"C01": "Likely to still be a Mentor in a year", "C02": "Workload feels s
         "C07": "Feels connected to the mission"}
 TB = ["First year", "1 to 3 years", "3+ years"]
 SOURCES = ["Live check-ins", "Demo data (synthetic)"]
+LONG_ORDER = list(LONG.values())
+
+
+def plot(chart, height=None):
+    st.altair_chart(ui.style(chart, height), theme=None, width="stretch")
 
 
 def _k():
@@ -129,7 +137,7 @@ def page_dashboard():
     m2.metric("Average intent to stay (1 to 5)", f"{inten:.1f}" if inten is not None else f"under {k}",
               delta=(f"{dlt:+.1f}" if dlt is not None and abs(dlt) >= 0.05 else None))
     flagged = (cur["band"] != "Low").sum()
-    m3.metric("Share with a support signal", f"{flagged / len(cur) * 100:.0f}%" if len(cur) >= k else f"under {k}",
+    m3.metric("With a support signal", f"{flagged / len(cur) * 100:.0f}%" if len(cur) >= k else f"under {k}",
               help="Mentors whose answers match the indicator rules set on the Risk tracker page. It is a prompt to offer support, not a judgment.")
     if cur["left_next"].notna().any():
         left = int(cur["left_next"].sum())
@@ -159,6 +167,48 @@ def page_dashboard():
                                     "Average (1 to 5)": st.column_config.NumberColumn(format="%.1f")})
         st.caption("Every trend line runs from 2.5 to 4.5 so lines can be compared. A blank means fewer than the minimum number of answers.")
 
+        st.subheader("Compare areas over time")
+        picks = st.multiselect("Areas to compare", LONG_ORDER, default=[LONG["C01"], LONG["C02"], LONG["C03"]], key="cmp_areas")
+        recs = []
+        for item in CORE:
+            for w in waves:
+                m = mean_k(v[v["wave"] == w][item], k)
+                if m is not None and LONG[item] in picks:
+                    recs.append({"Quarter": w, "Area": LONG[item], "Average": m})
+        if recs:
+            plot(alt.Chart(pd.DataFrame(recs)).mark_line(point=alt.OverlayMarkDef(size=60), strokeWidth=3).encode(
+                x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)),
+                y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
+                color=alt.Color("Area:N", scale=alt.Scale(range=[BLUE_, ORANGE_, "#282828", "#919191", "#1A74B8", "#F7B89E", "#265A82"]))), 300)
+        else:
+            st.info("Pick at least one area, or there are not enough answers to show.")
+
+        st.subheader("Averages at a glance")
+        recs = [{"Quarter": w, "Area": LONG[item], "Average": mean_k(v[v["wave"] == w][item], k)} for item in CORE for w in waves]
+        hm = pd.DataFrame(recs).dropna()
+        if not hm.empty:
+            base = alt.Chart(hm).encode(x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                        y=alt.Y("Area:N", sort=LONG_ORDER, title=None))
+            rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
+                color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
+            txt = base.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f"))
+            plot(rect + txt, 300)
+            st.caption("Blue is higher, orange is lower, grey is in the middle. The colors compare areas with each other, so a small color change is a small difference.")
+
+        st.subheader(f"How answers were spread in {sel}")
+        mix = []
+        for item in CORE:
+            sr = cur[item].dropna()
+            if len(sr) >= k:
+                for score in range(1, 6):
+                    mix.append({"Area": LONG[item], "Score": str(score), "Share": float((sr == score).mean())})
+        if mix:
+            plot(alt.Chart(pd.DataFrame(mix)).mark_bar().encode(
+                x=alt.X("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"), y=alt.Y("Area:N", sort=LONG_ORDER, title=None),
+                color=alt.Color("Score:N", scale=alt.Scale(domain=["1", "2", "3", "4", "5"], range=[ui.SCALE[i] for i in range(1, 6)]),
+                                legend=alt.Legend(title="Score (1 low, 5 high)", orient="bottom", direction="horizontal")),
+                order=alt.Order("Score:N")), 300)
+
     with t_theme:
         names = {t["id"]: t["name"] for t in db.get_published("codebook")[1]["themes"]}
         l, r_ = st.columns(2)
@@ -178,8 +228,8 @@ def page_dashboard():
                 st.info(f"No reason has {k} or more answers yet.")
             else:
                 bar = shown.rename_axis("Reason").reset_index(name="Mentors")
-                ch = alt.Chart(bar).mark_bar(color="#1E7F74").encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)))
-                st.altair_chart(ch, width="stretch")
+                ch = alt.Chart(bar).mark_bar(color=ORANGE_).encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)))
+                plot(ch + ch.mark_text(align="left", dx=4, color="#282828").encode(text="Mentors:Q"), 280)
             hidden = int((ex < k).sum())
             if hidden:
                 st.caption(f"{hidden} other reason(s) with fewer than {k} answers are hidden.")
@@ -191,8 +241,16 @@ def page_dashboard():
                 s = cur[item].dropna()
                 lows.append({"Area": LABEL[item], "Share rating low": (float((s <= 2).mean()) if len(s) >= k else None)})
             lows = pd.DataFrame(lows).sort_values("Share rating low", ascending=False, na_position="last")
-            st.dataframe(lows, hide_index=True, width="stretch",
-                         column_config={"Share rating low": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
+            ld = lows.dropna()
+            if ld.empty:
+                st.info(f"Each area needs at least {k} answers to be shown.")
+            else:
+                lb = alt.Chart(ld).mark_bar(color=BLUE_).encode(x=alt.X("Share rating low:Q", axis=alt.Axis(format="%"), title=None),
+                                                               y=alt.Y("Area:N", sort="-x", title=None))
+                plot(lb + lb.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Share rating low:Q", format=".0%")), 280)
+            with st.expander("See the numbers"):
+                st.dataframe(lows, hide_index=True, width="stretch",
+                             column_config={"Share rating low": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
         st.subheader("In their words")
         if source == "demo":
             q = demo_quotes()
@@ -220,8 +278,31 @@ def page_dashboard():
             else:
                 ch = alt.Chart(df_).mark_line(point=True).encode(
                     x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
-                    color=alt.Color("Group:N", scale=alt.Scale(range=["#B5463B", "#1E7F74"]), legend=alt.Legend(title=None, orient="bottom")))
-                st.altair_chart(ch, width="stretch")
+                    color=alt.Color("Group:N", scale=alt.Scale(range=[ORANGE_, BLUE_]), legend=alt.Legend(title=None, orient="bottom")))
+                plot(ch, 300)
+            st.subheader(f"How scores spread in {sel}")
+            mixr = []
+            for g, flag in (("Restricted access", 1), ("Open access", 0)):
+                sr = base[(base["wave"] == sel) & (base["restricted"] == flag)]["C05"].dropna()
+                if len(sr) >= k:
+                    for score in range(1, 6):
+                        mixr.append({"Group": g, "Score": str(score), "Share": float((sr == score).mean())})
+            if mixr:
+                plot(alt.Chart(pd.DataFrame(mixr)).mark_bar().encode(
+                    x=alt.X("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"), y=alt.Y("Group:N", title=None),
+                    color=alt.Color("Score:N", scale=alt.Scale(domain=["1", "2", "3", "4", "5"], range=[ui.SCALE[i] for i in range(1, 6)]),
+                                    legend=alt.Legend(title="Score (1 low, 5 high)", orient="bottom", direction="horizontal")),
+                    order=alt.Order("Score:N")), 160)
+            st.subheader("Does it relate to staying?")
+            both = base[base["C05"].notna() & base["C01"].notna()].copy()
+            both["Band"] = pd.cut(both["C05"], [0, 2, 3, 5], labels=["Scored it 1 or 2", "Scored it 3", "Scored it 4 or 5"])
+            ib = both.groupby("Band", observed=True)["C01"].agg(["count", "mean"]).reset_index()
+            ib = ib[ib["count"] >= k]
+            if not ib.empty:
+                bc = alt.Chart(ib).mark_bar(color=BLUE_).encode(x=alt.X("Band:N", title=None, sort=["Scored it 1 or 2", "Scored it 3", "Scored it 4 or 5"], axis=alt.Axis(labelAngle=0)),
+                                                              y=alt.Y("mean:Q", scale=alt.Scale(domain=[1, 5]), title="Average intent to stay (1 to 5)"))
+                plot(bc + bc.mark_text(dy=-8, color="#282828").encode(text=alt.Text("mean:Q", format=".1f")), 260)
+                st.caption("Average intent to stay among Mentors who scored school-day time low, middle, or high, across all quarters.")
             st.warning("In the demo data, restricted access was set to lower this score, and the link to intent to stay is partly built in. "
                        "With real data the gap could be larger, smaller, or absent, and a lower score does not prove it causes people to leave.")
         else:
@@ -230,8 +311,8 @@ def page_dashboard():
             if df_.empty:
                 st.info(f"At least {k} answers are needed to show a trend.")
             else:
-                st.altair_chart(alt.Chart(df_).mark_line(point=True, color="#1E7F74").encode(
-                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]))), width="stretch")
+                plot(alt.Chart(df_).mark_line(point=True, color=BLUE_, strokeWidth=3).encode(
+                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]))), 300)
             st.caption("A comparison of restricted and open chapters needs chapter information, which live check-ins do not collect yet.")
 
 
@@ -331,30 +412,56 @@ def page_risk():
         c1.metric("Mentors with a check-in", n)
         for col, b in zip((c2, c3, c4), ("High", "Medium", "Low")):
             x = int(counts.get(b, 0))
-            col.metric(f"{b} priority", f"{x} ({x / n * 100:.0f}%)" if x >= k else f"under {k}")
+            col.metric(f"{b} priority" + (f" ({x / n * 100:.0f}%)" if x >= k else ""), x if x >= k else f"under {k}")
         trend = []
         for w in waves:
-            s = ev[ev["wave"] == w]
-            trend.append({"Quarter": w, "Share with a signal": (float((s["band"] != "Low").mean()) if len(s) >= k else None)})
+            sw = ev[ev["wave"] == w]
+            trend.append({"Quarter": w, "Share with a signal": (float((sw["band"] != "Low").mean()) if len(sw) >= k else None)})
         t = pd.DataFrame(trend).dropna()
+        d1, d2 = st.columns(2)
+        with d1:
+            st.markdown(f"**Priority mix in {sel}**")
+            dn = pd.DataFrame({"Priority": ["High", "Medium", "Low"], "Mentors": [int(counts.get(b, 0)) for b in ("High", "Medium", "Low")]})
+            dn = dn[dn["Mentors"] >= k]
+            arc = alt.Chart(dn).mark_arc(innerRadius=70, stroke="white", strokeWidth=3).encode(
+                theta=alt.Theta("Mentors:Q"), color=alt.Color("Priority:N", scale=alt.Scale(domain=list(ui.BAND), range=list(ui.BAND.values())),
+                                                              legend=alt.Legend(orient="bottom", direction="horizontal")))
+            plot(arc, 280)
+        with d2:
+            st.markdown("**Priority mix by quarter**")
+            rows_ = []
+            for w in waves:
+                sw = ev[ev["wave"] == w]
+                if len(sw) >= k:
+                    for b in ("High", "Medium", "Low"):
+                        c_ = int((sw["band"] == b).sum())
+                        if c_ >= k:
+                            rows_.append({"Quarter": w, "Priority": b, "Share": c_ / len(sw)})
+            if rows_:
+                plot(alt.Chart(pd.DataFrame(rows_)).mark_bar().encode(
+                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"),
+                    color=alt.Color("Priority:N", scale=alt.Scale(domain=list(ui.BAND), range=list(ui.BAND.values())),
+                                    legend=alt.Legend(orient="bottom", direction="horizontal")),
+                    order=alt.Order("order:Q") if False else alt.Order("Priority:N", sort="descending")), 280)
+                st.caption(f"Groups with fewer than {k} Mentors are left out.")
         l, r_ = st.columns(2)
         with l:
             st.markdown("**Share of Mentors with a signal, by quarter**")
             if len(t):
-                st.altair_chart(alt.Chart(t).mark_line(point=True, color="#B5463B").encode(
-                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Share with a signal:Q", axis=alt.Axis(format="%"), scale=alt.Scale(domain=[0, max(0.5, float(t["Share with a signal"].max()) + 0.05)]), title=None)),
-                    width="stretch")
+                plot(alt.Chart(t).mark_line(point=alt.OverlayMarkDef(size=70), color=ORANGE_, strokeWidth=3).encode(
+                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y("Share with a signal:Q", axis=alt.Axis(format="%"), scale=alt.Scale(domain=[0, max(0.5, float(t["Share with a signal"].max()) + 0.05)]), title=None)), 280)
         with r_:
             st.markdown(f"**Which signals show up most in {sel}**")
             names = {x["id"]: x["name"] for x in rules}
-            cnt = pd.Series([h for hs in cur["hit_ids"] for h in hs]).map(names).value_counts()
+            cnt = pd.Series([h for hs in cur["hit_ids"] for h in hs], dtype="object").map(names).value_counts()
             cnt = cnt[cnt >= k]
             if cnt.empty:
                 st.caption(f"No single signal appears {k} or more times.")
             else:
                 bar = cnt.rename_axis("Signal").reset_index(name="Mentors")
-                st.altair_chart(alt.Chart(bar).mark_bar(color="#1E7F74").encode(
-                    x=alt.X("Mentors:Q", title=None), y=alt.Y("Signal:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320))), width="stretch")
+                bb = alt.Chart(bar).mark_bar(color=BLUE_).encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Signal:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)))
+                plot(bb + bb.mark_text(align="left", dx=4, color="#282828").encode(text="Mentors:Q"), 280)
 
     if source == "demo":
         lab = ev[ev["left_next"].notna()]
@@ -363,6 +470,18 @@ def page_risk():
         for b in ("High", "Medium", "Low"):
             s = lab[lab["band"] == b]
             rows.append({"Priority": b, "Check-ins": len(s), "Share of all check-ins": len(s) / len(lab), "Left before the next quarter": float(s["left_next"].mean()) if len(s) else None})
+        ev_df = pd.DataFrame(rows)
+        base_rate = float(lab["left_next"].mean())
+        dep = alt.Chart(ev_df).mark_bar().encode(
+            x=alt.X("Priority:N", sort=["High", "Medium", "Low"], title=None, axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("Left before the next quarter:Q", axis=alt.Axis(format="%"), title="Left before the next quarter"),
+            color=alt.Color("Priority:N", scale=alt.Scale(domain=list(ui.BAND), range=list(ui.BAND.values())), legend=None))
+        avg = alt.Chart(pd.DataFrame({"y": [base_rate]})).mark_rule(color="#282828", strokeDash=[6, 4], strokeWidth=2).encode(y="y:Q")
+        lbl = alt.Chart(ev_df).mark_text(dy=-9, color="#282828", fontWeight="bold").encode(
+            x=alt.X("Priority:N", sort=["High", "Medium", "Low"]), y="Left before the next quarter:Q",
+            text=alt.Text("Left before the next quarter:Q", format=".0%"))
+        plot(dep + avg + lbl, 260)
+        st.caption(f"The dashed line is the overall rate ({base_rate * 100:.0f}%).")
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
                      column_config={"Share of all check-ins": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent"),
                                     "Left before the next quarter": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
@@ -393,7 +512,9 @@ def page_risk():
             "Intent to stay (last)": [("skipped" if pd.isna(a) else str(int(a))) for a in lst["C01"]],
             "Time as a Mentor": [("not recorded" if pd.isna(t) else TB[int(t)]) for t in lst["tb"]],
             "Check-in offered": ["Yes" if m in done else "" for m in lst["mentor"]]})
-        st.dataframe(table, hide_index=True, width="stretch",
+        colors = {"High": "background-color:#EC6237;color:white;font-weight:bold", "Medium": "background-color:#F7B89E;color:#282828;font-weight:bold"}
+        styled = table.style.map(lambda x: colors.get(x, ""), subset=["Priority"])
+        st.dataframe(styled, hide_index=True, width="stretch",
                      column_config={"What stands out": st.column_config.TextColumn(width="large")})
         pick = st.multiselect("Mark check-in offered for", [m for m in lst["mentor"] if m not in done])
         note = st.text_input("Note (optional, for the admin only)", key="act_note")
