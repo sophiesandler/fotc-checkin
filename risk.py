@@ -7,7 +7,7 @@ import pandas as pd
 
 CORE = ["C01", "C02", "C03", "C04", "C05", "C06", "C07"]
 LABEL = {"C01": "Intent to stay", "C02": "Workload sustainability", "C03": "Supervisor support", "C04": "Role clarity",
-         "C05": "School-day time feels meaningful", "C06": "Emotional support", "C07": "Mission connection"}
+         "C05": "Time feels meaningful when youth are away", "C06": "Emotional support", "C07": "Mission connection"}
 KINDS = {"level": "Rated at or below", "drop": "Dropped since last check-in by at least",
          "count_low": "Number of areas rated 2 or lower is at least", "skipped": "Number of questions skipped is at least",
          "first_year": "Mentor is in their first year"}
@@ -58,8 +58,8 @@ def describe(rule):
 
 
 def evaluate(df, rules, bands):
-    """df columns: mentor, wave, C01..C07, n_skipped, tb. Adds points, band, reasons (and previous values for drops)."""
-    d = df.sort_values(["mentor", "wave"]).reset_index(drop=True).copy()
+    """df columns: mentor, wave (season label), t (season order), C01..C07, n_skipped, tb. Adds points, band, reasons (and previous values for drops)."""
+    d = df.sort_values(["mentor", "t"]).reset_index(drop=True).copy()
     for c in CORE:
         d["prev_" + c] = d.groupby("mentor")[c].shift(1)
     d["points"] = 0

@@ -78,6 +78,7 @@ div[data-baseweb="tab-border"] {{ background:#D9D9D9; }}
 [data-testid="stExpander"] summary {{ font-family:{FONT_COND}; text-transform:uppercase; letter-spacing:.03em; font-weight:700; }}
 [data-testid="stProgress"] div[role="progressbar"] > div {{ background:{BLUE}; }}
 blockquote {{ border-left:6px solid {BLUE}; padding:.2rem 1rem; color:{CHARCOAL}; background:{BLUE_TINT}; }}
+blockquote p {{ color:{CHARCOAL}; font-size:1.05rem; }}
 
 /* login hero */
 .hero {{ position:relative; min-height:430px; background:{BLUE}; clip-path:polygon(14% 0, 100% 0, 100% 100%, 0 100%); display:flex; align-items:flex-end; justify-content:flex-end; padding:0; }}

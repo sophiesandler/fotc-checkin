@@ -7,6 +7,7 @@ import streamlit as st
 
 import content as ct
 import db
+import seasons
 from auth import require
 
 SECONDS = {"Rating": 15, "Spoken": 60, "Checklist": 30}
@@ -30,11 +31,12 @@ def page_checkin():
         if st.button("Start", type="primary", disabled=not agreed):
             fresh = db.get_user(user["username"]) or {}
             stype = fresh.get("session_type") or "Quarterly"
-            quarter = int(db.get_setting("current_quarter", "1"))
+            season = seasons.current_label()
+            quarter = seasons.number(seasons.parse(season)[0])
             ver, qs = db.get_published("questions")
             session = ct.build_session(qs, stype, quarter, bool(fresh.get("first_year")))
             st.session_state.ci = dict(phase="q", idx=0, sid=uuid.uuid4().hex[:10], ver=ver, session=session,
-                                       stype=stype, quarter=quarter)
+                                       stype=stype, quarter=quarter, season=season)
             st.rerun()
         return
 
@@ -74,7 +76,7 @@ def page_checkin():
 
     def save(skip):
         row = dict(session_id=ci["sid"], ts=db.now(), user_id=user["id"], participant_code=user["username"],
-                   session_type=ci["stype"], quarter=ci["quarter"], question_id=q["id"], question_version=ci["ver"],
+                   session_type=ci["stype"], quarter=ci["quarter"], season=ci["season"], question_id=q["id"], question_version=ci["ver"],
                    qtype=q["type"], rating="", text_answer="", checklist_selected="", checklist_top="", audio_blob=None,
                    audio_note="", transcript="", skipped=True, linked_themes=q.get("themes", ""))
         if not skip:
@@ -208,7 +210,7 @@ def _gather_questions(work, stamp):
         nq.update(text=str(g("text", q["text"])).strip(), type=g("type", q["type"]), wave=g("wave", q["wave"]),
                   order=int(g("order", q["order"])), options=str(g("options", q["options"])).strip(), block=g("block", q["block"]),
                   themes=str(g("themes", q["themes"])).strip(), active=bool(g("active", q.get("active", True))),
-                  quarters=sorted(g("quarters", q.get("quarters", []))), first_year_always=bool(g("fy", q.get("first_year_always", False))))
+                  quarters=sorted(seasons.number(x) if isinstance(x, str) else x for x in g("quarters", q.get("quarters", []))), first_year_always=bool(g("fy", q.get("first_year_always", False))))
         out.append(nq)
     return out
 
@@ -281,8 +283,8 @@ def page_questions():
                                  help="Rating: describe the scale, for example 1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer). "
                                       "Checklist: list the choices separated by semicolons.")
                     if q["block"] == "Rotating":
-                        st.multiselect("Asked in quarters", [1, 2, 3, 4], default=q.get("quarters", []), key=k + "quarters")
-                        st.checkbox("Also ask every quarter during a Mentor's first year", q.get("first_year_always", False), key=k + "fy")
+                        st.multiselect("Asked in seasons", seasons.SEASONS, default=[seasons.SEASONS[n - 1] for n in q.get("quarters", [])], key=k + "quarters")
+                        st.checkbox("Also ask every season during a Mentor's first year", q.get("first_year_always", False), key=k + "fy")
                     st.text_input("Linked themes (for reference)", q.get("themes", ""), key=k + "themes")
                     st.checkbox("Active (untick to retire this question)", q.get("active", True), key=k + "active")
         with st.expander("Add a new question"):
@@ -326,7 +328,7 @@ def page_questions():
                 st.error(e)
             unsched = _unscheduled(new)
             if unsched:
-                st.info("Not scheduled in any quarter right now (kept in reserve, so no Mentor sees them): " + ", ".join(unsched))
+                st.info("Not scheduled in any season right now (kept in reserve, so no Mentor sees them): " + ", ".join(unsched))
             changes = ct.diff_questions(pub, new)
             if not changes:
                 st.info("Nothing has changed from the live version.")
@@ -344,7 +346,8 @@ def page_questions():
         st.caption("See what a Mentor would be asked, using your current edits.")
         c1, c2, c3 = st.columns(3)
         stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], key="prev_type")
-        quarter = c2.selectbox("Quarter", [1, 2, 3, 4], key="prev_q")
+        season_ = c2.selectbox("Season", seasons.SEASONS, index=seasons.number(seasons.parse(seasons.current_label())[0]) - 1, key="prev_q")
+        quarter = seasons.number(season_)
         fy = c3.checkbox("First-year Mentor", key="prev_fy")
         session = ct.build_session(_gather_questions(work, stamp), stype, quarter, fy)
         st.metric("Questions", len(session))
@@ -538,13 +541,17 @@ def page_settings():
     st.title("Settings")
     _flash()
     title = st.text_input("App title", db.get_setting("app_title", "Mentor check-in"))
-    quarter = st.selectbox("Which quarter's rotating questions are asked now?", [1, 2, 3, 4], index=int(db.get_setting("current_quarter", "1")) - 1)
+    cur_name, cur_year = seasons.parse(seasons.current_label())
+    s1, s2 = st.columns(2)
+    season_name = s1.selectbox("Which season is open for check-ins?", seasons.SEASONS, index=seasons.SEASONS.index(cur_name),
+                               help="Check-ins are stamped with this season, and it picks which rotating questions are asked.")
+    season_year = s2.number_input("Year", min_value=2024, max_value=2040, value=int(cur_year), step=1)
     k = st.number_input("Smallest group shown in reports (privacy)", min_value=2, max_value=50, value=int(db.get_setting("min_group", "5")))
     consent = st.text_area("Welcome and consent text (Mentors see this first)", db.get_setting("consent_text"), height=260)
     thanks = st.text_area("Thank-you message", db.get_setting("thanks_text"), height=140)
     st.caption("Friends of the Children staff and legal review should approve the consent text before any real use.")
     if st.button("Save settings", type="primary"):
-        for key, val in (("app_title", title), ("current_quarter", quarter), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
+        for key, val in (("app_title", title), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
             db.set_setting(key, val)
         db.log(me["username"], "changed settings")
         st.session_state.flash = "Settings saved."; st.rerun()
@@ -569,7 +576,7 @@ A short check-in about your work. It takes a few minutes. Every question can be 
 
 If you share a safety concern, a designated person will follow up so you can get help.""",
     "leader": """### What you can do
-- **Dashboard** shows group results: trends, themes, and school-day time. Groups under the minimum size are hidden.
+- **Dashboard** shows group results by season: trends and themes. Groups under the minimum size are hidden.
 - **Risk tracker** shows the share of Mentors with a support signal, and which signals appear most. Individual Mentors are not shown to you.
 - **Questions** and **Coding key** show what is being asked and how answers are tagged. Only the program admin can edit them.
 
@@ -584,9 +591,12 @@ Use the switch at the top of each page to look at live check-ins or the clearly 
 Open **Coding key** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
 
 ### Dashboard and Risk tracker
-- **Dashboard** and **Risk tracker** show group results. On the Risk tracker you also see the list of Mentors who might benefit from a supportive check-in, and you can mark when one has been offered.
+- **Dashboard** and **Risk tracker** show group results by season. Open a season in **Settings** before Mentors start their check-ins. On the Risk tracker you also see the list of Mentors who might benefit from a supportive check-in, and you can mark when one has been offered.
 - **Change the indicator rules** at the bottom of the Risk tracker. Each rule is a plain statement worth some points, and two cut-offs set High and Medium priority.
 - Use the switch at the top to see live check-ins or the demo data.
+
+### Tagging answers
+Open **Tag answers** to turn spoken answers into themes. Copy the message into a Claude chat that has the tagging instructions, paste Claude's reply back, and save. The **Themes** tab on the Dashboard uses these tags.
 
 ### Looking after people and privacy
 - **People**: add Mentors, set exit interviews, reset passwords.

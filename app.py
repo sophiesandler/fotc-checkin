@@ -7,6 +7,7 @@ import db
 import ui
 import views
 import dashboard
+import tagging
 from auth import login_screen
 
 
@@ -62,6 +63,7 @@ PAGES = {
     "admin": [st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=True),
               st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk"),
               st.Page(views.page_responses, title="Responses", url_path="responses"),
+              st.Page(tagging.page_tag_answers, title="Tag answers", url_path="tag-answers"),
               st.Page(views.page_questions, title="Questions", url_path="questions"),
               st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
               st.Page(views.page_users, title="People", url_path="people"),

@@ -9,6 +9,7 @@ import streamlit as st
 
 import db
 import risk
+import seasons
 import ui
 from auth import require
 
@@ -18,11 +19,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CORE, LABEL = risk.CORE, risk.LABEL
 ITEM_THEME = {"C02": "T02", "C03": "T04", "C04": "T05", "C05": "T01", "C06": "T08", "C07": "T09"}
 LONG = {"C01": "Likely to still be a Mentor in a year", "C02": "Workload feels sustainable", "C03": "Gets the support needed from their supervisor",
-        "C04": "Understands what is expected", "C05": "School-day time feels meaningful", "C06": "Has enough emotional support",
+        "C04": "Understands what is expected", "C05": "Time feels meaningful when youth are away", "C06": "Has enough emotional support",
         "C07": "Feels connected to the mission"}
 TB = ["First year", "1 to 3 years", "3+ years"]
 SOURCES = ["Live check-ins", "Demo data (synthetic)"]
 LONG_ORDER = list(LONG.values())
+SHORT = risk.LABEL
+SHORT_ORDER = [SHORT[c] for c in CORE]
 
 
 def plot(chart, height=None):
@@ -45,33 +48,47 @@ def demo_exits():
 
 
 @st.cache_data
-def demo_quotes():
-    return json.load(open(os.path.join(HERE, "demo_quotes.json"), encoding="utf-8"))
+def demo_tags():
+    return pd.read_csv(os.path.join(HERE, "demo_tags.csv")).fillna({"quote": ""})
+
+
+def season_of(row):
+    return row.get("season") or seasons.from_ts(row.get("ts"))
 
 
 def live_checkins():
-    cols = ["mentor", "wave", *CORE, "n_skipped", "tb", "restricted", "left_next"]
+    cols = ["mentor", "wave", "t", *CORE, "n_skipped", "tb", "restricted", "left_next"]
     rows = db.fetch_responses()
     if not rows:
         return pd.DataFrame(columns=cols)
     df = pd.DataFrame(rows)
     df["skipped"] = df["skipped"].astype(int)
-    df["wave"] = df["ts"].str[:4] + " Q" + df["quarter"].astype(str)
+    df["wave"] = [season_of(r) for r in rows]
     r = df[(df["qtype"] == "Rating") & df["question_id"].isin(CORE)].copy()
     r["val"] = pd.to_numeric(r["rating"], errors="coerce")
     if r.empty:
         return pd.DataFrame(columns=cols)
     piv = r.pivot_table(index=["participant_code", "session_id", "wave"], columns="question_id", values="val", aggfunc="first").reset_index()
-    last_ts = df.groupby("session_id")["ts"].max()
-    piv["ts"] = piv["session_id"].map(last_ts)
+    piv["ts"] = piv["session_id"].map(df.groupby("session_id")["ts"].max())
     piv["n_skipped"] = piv["session_id"].map(df.groupby("session_id")["skipped"].sum())
     for c in CORE:
         if c not in piv:
             piv[c] = np.nan
-    piv = piv.sort_values("ts").drop_duplicates(["participant_code", "wave"], keep="last")
-    piv = piv.rename(columns={"participant_code": "mentor"})
+    piv = piv.sort_values("ts").drop_duplicates(["participant_code", "wave"], keep="last").rename(columns={"participant_code": "mentor"})
+    piv["t"] = piv["wave"].map(seasons.key)
     piv["tb"], piv["restricted"], piv["left_next"] = np.nan, np.nan, np.nan
     return piv[cols].reset_index(drop=True)
+
+
+def live_tags():
+    rows = db.get_tags()
+    if not rows:
+        return pd.DataFrame(columns=["mentor", "wave", "t", "theme", "valence", "question", "quote", "aggregate_only"])
+    df = pd.DataFrame(rows)
+    df["wave"] = [season_of(r) for r in rows]
+    df["t"] = df["wave"].map(seasons.key)
+    df = df[~df["escalation"].astype(bool)]
+    return df.rename(columns={"participant_code": "mentor", "question_id": "question"})[["mentor", "wave", "t", "theme", "valence", "question", "quote", "aggregate_only"]]
 
 
 def pick_source():
@@ -82,7 +99,7 @@ def pick_source():
     choice = st.radio("Data shown", SOURCES, index=SOURCES.index(st.session_state.src_choice), horizontal=True,
                       key="src_radio", on_change=lambda: st.session_state.update(src_choice=st.session_state.src_radio))
     if choice == SOURCES[1]:
-        st.warning("Demo data: 300 synthetic Mentors over six quarters. Nobody here is real, and the patterns were planted for testing.")
+        st.warning("Demo data: 300 synthetic Mentors over six seasons, with illustrative answers written for the demo. Nobody here is real, and the patterns were planted for testing.")
         return "demo", demo_checkins().copy()
     if live["mentor"].nunique() < k:
         st.caption(f"Live check-ins come from {live['mentor'].nunique()} Mentor(s) so far. Groups smaller than {k} stay hidden. You can lower this in Settings while testing.")
@@ -96,9 +113,13 @@ def mean_k(s, k):
 
 def pick_wave(waves, key):
     if len(waves) < 2:
-        st.caption(f"Quarter shown: {waves[0]}")
+        st.caption(f"Season shown: {waves[0]}")
         return waves[0]
-    return st.select_slider("Quarter", options=waves, value=waves[-1], key=key)
+    return st.select_slider("Season", options=waves, value=waves[-1], key=key)
+
+
+def order_waves(df):
+    return list(df.drop_duplicates("wave").sort_values("t")["wave"])
 
 
 # ---------------------------------------------------------------- dashboard
@@ -106,27 +127,30 @@ def page_dashboard():
     user = require("leader", "admin")
     k = _k()
     st.title("Dashboard")
-    st.caption(f"Group results only. Groups smaller than {k} are hidden to protect privacy.")
+    st.caption(f"Group results by season. Groups smaller than {k} are hidden to protect privacy.")
     source, data = pick_source()
     if data.empty:
         st.info("No check-ins yet. Sign in as a Mentor, complete a practice check-in, and come back, or switch to the demo data above.")
         return
     rules, bands = risk.load_rules()
     ev = risk.evaluate(data, rules, bands)
-    waves = sorted(ev["wave"].unique())
+    waves = order_waves(ev)
     c1, c2, c3 = st.columns([2, 1, 1])
     with c1:
         sel = pick_wave(waves, "dash_wave")
     has_tb, has_acc = ev["tb"].notna().any(), ev["restricted"].notna().any()
     tb = c2.selectbox("Time as a Mentor", ["Everyone"] + TB, disabled=not has_tb)
-    acc = c3.selectbox("School-day access", ["All chapters", "Restricted", "Open"], disabled=not has_acc)
+    acc = c3.selectbox("School-day access", ["All chapters", "Restricted", "Open"], disabled=not has_acc,
+                       help="Only available in the demo data, which includes chapters. Live check-ins are from one chapter.")
     v = ev.copy()
     if has_tb and tb != "Everyone":
         v = v[v["tb"] == TB.index(tb)]
     if has_acc and acc != "All chapters":
         v = v[v["restricted"] == (1 if acc == "Restricted" else 0)]
     wi = waves.index(sel)
-    cur, prev = v[v["wave"] == sel], (v[v["wave"] == waves[wi - 1]] if wi > 0 else v.iloc[0:0])
+    prev_label = waves[wi - 1] if wi > 0 else None
+    cur = v[v["wave"] == sel]
+    prev = v[v["wave"] == prev_label] if prev_label else v.iloc[0:0]
 
     n = cur["mentor"].nunique()
     m1, m2, m3, m4 = st.columns(4)
@@ -141,64 +165,129 @@ def page_dashboard():
               help="Mentors whose answers match the indicator rules set on the Risk tracker page. It is a prompt to offer support, not a judgment.")
     if cur["left_next"].notna().any():
         left = int(cur["left_next"].sum())
-        m4.metric("Left before the next quarter", left if left >= k else f"under {k}")
+        m4.metric("Left before next season", left if left >= k else f"under {k}")
     else:
-        m4.metric("Left before the next quarter", "pending")
+        m4.metric("Left before next season", "pending")
 
-    t_trend, t_theme, t_school = st.tabs(["Trends", "Themes", "School-day time"])
+    t_trend, t_theme = st.tabs(["Trends", "Themes"])
     with t_trend:
-        rows = []
-        for item in CORE:
-            series = [mean_k(v[v["wave"] == w][item], k) for w in waves]
-            now_v = series[wi]
-            before = series[wi - 1] if wi > 0 else None
-            if wi == 0:
-                chg = "first quarter"
-            elif now_v is None or before is None:
-                chg = "not enough answers"
-            elif abs(now_v - before) < 0.15:
-                chg = "about the same"
-            else:
-                chg = f"{'up' if now_v > before else 'down'} {abs(now_v - before):.1f}"
-            rows.append({"What Mentors told us": LONG[item], "Six-quarter trend": series, "Average (1 to 5)": None if now_v is None else round(now_v, 1),
-                         "Change since last quarter": chg})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
-                     column_config={"Six-quarter trend": st.column_config.LineChartColumn(y_min=2.5, y_max=4.5, width="medium"),
-                                    "Average (1 to 5)": st.column_config.NumberColumn(format="%.1f")})
-        st.caption("Every trend line runs from 2.5 to 4.5 so lines can be compared. A blank means fewer than the minimum number of answers.")
+        _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb)
+    with t_theme:
+        _themes(source, v, waves, sel, k)
 
-        st.subheader("Compare areas over time")
-        picks = st.multiselect("Areas to compare", LONG_ORDER, default=[LONG["C01"], LONG["C02"], LONG["C03"]], key="cmp_areas")
+
+def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
+    # ---- the season at a glance
+    rows = []
+    means = {item: [mean_k(v[v["wave"] == w][item], k) for w in waves] for item in CORE}
+    for item in CORE:
+        series = means[item]
+        now_v = series[wi]
+        before = series[wi - 1] if wi > 0 else None
+        if wi == 0:
+            chg = "first season"
+        elif now_v is None or before is None:
+            chg = "not enough answers"
+        elif abs(now_v - before) < 0.15:
+            chg = "about the same"
+        else:
+            chg = f"{'up' if now_v > before else 'down'} {abs(now_v - before):.1f}"
+        rows.append({"What Mentors told us": LONG[item], "Trend by season": series, "Average (1 to 5)": None if now_v is None else round(now_v, 1),
+                     "Change since last season": chg})
+    st.subheader(f"{sel} at a glance")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
+                 column_config={"Trend by season": st.column_config.LineChartColumn(y_min=2.5, y_max=4.5, width="medium"),
+                                "Average (1 to 5)": st.column_config.NumberColumn(format="%.1f")})
+    st.caption("Every trend line runs from 2.5 to 4.5 so lines can be compared. A blank means fewer than the minimum number of answers.")
+
+    # ---- biggest movers and same season last year
+    left_, right_ = st.columns(2)
+    with left_:
+        st.subheader("Biggest movers")
+        if prev_label is None:
+            st.info("This is the first season, so there is nothing to compare with.")
+        else:
+            mv = [{"Area": SHORT[i], "Change": means[i][wi] - means[i][wi - 1]} for i in CORE if means[i][wi] is not None and means[i][wi - 1] is not None]
+            if not mv:
+                st.info(f"Not enough answers in both seasons to compare.")
+            else:
+                mvd = pd.DataFrame(mv)
+                mvd["Direction"] = np.where(mvd["Change"] >= 0, "Up", "Down")
+                bar = alt.Chart(mvd).mark_bar().encode(
+                    x=alt.X("Change:Q", title="Change in average"), y=alt.Y("Area:N", sort=alt.EncodingSortField("Change", order="descending"), title=None),
+                    color=alt.Color("Direction:N", scale=alt.Scale(domain=["Up", "Down"], range=[BLUE_, ORANGE_]), legend=None))
+                plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.2f")), 300)
+                st.caption(f"{prev_label} to {sel}. Blue means higher, orange means lower.")
+    with right_:
+        st.subheader("Same season, last year")
+        ly = seasons.same_last_year(sel)
+        if ly not in waves:
+            st.info(f"There are no check-ins from {ly} to compare with yet.")
+        else:
+            recs = []
+            for item in CORE:
+                a, b = mean_k(v[v["wave"] == ly][item], k), mean_k(v[v["wave"] == sel][item], k)
+                if a is not None and b is not None:
+                    recs += [{"Area": SHORT[item], "Season": ly, "Average": a}, {"Area": SHORT[item], "Season": sel, "Average": b}]
+            if recs:
+                plot(alt.Chart(pd.DataFrame(recs)).mark_bar().encode(
+                    y=alt.Y("Area:N", sort=SHORT_ORDER, title=None), x=alt.X("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
+                    yOffset="Season:N", color=alt.Color("Season:N", sort=[ly, sel], scale=alt.Scale(domain=[ly, sel], range=["#BDBDBD", BLUE_]),
+                                                        legend=alt.Legend(orient="bottom", direction="horizontal"))), 300)
+            else:
+                st.info("Not enough answers in both seasons to compare.")
+
+    # ---- heatmap: area by season
+    st.subheader("Averages by season")
+    recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in CORE for i, w in enumerate(waves) if means[item][i] is not None]
+    hm = pd.DataFrame(recs)
+    if not hm.empty:
+        base = alt.Chart(hm).encode(x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                    y=alt.Y("Area:N", sort=LONG_ORDER, title=None))
+        rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
+            color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
+        txt = base.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f"))
+        plot(rect + txt, 300)
+        st.caption("Blue is higher, orange is lower, grey is in the middle. Colors compare areas and seasons with each other, so a small color change is a small difference.")
+
+    # ---- heatmap: time as a Mentor by season
+    st.subheader("By time as a Mentor")
+    if not has_tb:
+        st.info("Live check-ins do not record how long each Mentor has been in the role yet, so this view uses the demo data.")
+    else:
+        area = st.selectbox("Area", LONG_ORDER, key="tb_area")
+        item = next(i for i, name in LONG.items() if name == area)
+        base_df = ev if not has_acc or acc == "All chapters" else ev[ev["restricted"] == (1 if acc == "Restricted" else 0)]
         recs = []
-        for item in CORE:
-            for w in waves:
-                m = mean_k(v[v["wave"] == w][item], k)
-                if m is not None and LONG[item] in picks:
-                    recs.append({"Quarter": w, "Area": LONG[item], "Average": m})
+        for w in waves:
+            for gi, g in enumerate(TB):
+                m = mean_k(base_df[(base_df["wave"] == w) & (base_df["tb"] == gi)][item], k)
+                if m is not None:
+                    recs.append({"Season": w, "Group": g, "Average": m})
+        if recs:
+            b2 = alt.Chart(pd.DataFrame(recs)).encode(x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                                      y=alt.Y("Group:N", sort=TB, title=None))
+            plot(b2.mark_rect(stroke="white", strokeWidth=2).encode(color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
+                 + b2.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f")), 190)
+        else:
+            st.info(f"Each group needs at least {k} answers to be shown.")
+
+    # ---- more detail, tucked away
+    with st.expander("Compare areas over time"):
+        picks = st.multiselect("Areas to compare", LONG_ORDER, default=[LONG["C01"], LONG["C02"], LONG["C03"]], key="cmp_areas")
+        recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in CORE for i, w in enumerate(waves)
+                if means[item][i] is not None and LONG[item] in picks]
         if recs:
             plot(alt.Chart(pd.DataFrame(recs)).mark_line(point=alt.OverlayMarkDef(size=60), strokeWidth=3).encode(
-                x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)),
-                y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
+                x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
                 color=alt.Color("Area:N", scale=alt.Scale(range=[BLUE_, ORANGE_, "#282828", "#919191", "#1A74B8", "#F7B89E", "#265A82"]))), 300)
         else:
-            st.info("Pick at least one area, or there are not enough answers to show.")
-
-        st.subheader("Averages at a glance")
-        recs = [{"Quarter": w, "Area": LONG[item], "Average": mean_k(v[v["wave"] == w][item], k)} for item in CORE for w in waves]
-        hm = pd.DataFrame(recs).dropna()
-        if not hm.empty:
-            base = alt.Chart(hm).encode(x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-                                        y=alt.Y("Area:N", sort=LONG_ORDER, title=None))
-            rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
-                color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
-            txt = base.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f"))
-            plot(rect + txt, 300)
-            st.caption("Blue is higher, orange is lower, grey is in the middle. The colors compare areas with each other, so a small color change is a small difference.")
-
-        st.subheader(f"How answers were spread in {sel}")
+            st.info("Pick at least one area.")
+    with st.expander(f"How answers were spread in {sel}"):
+        cur_ = v[v["wave"] == sel]
         mix = []
         for item in CORE:
-            sr = cur[item].dropna()
+            sr = cur_[item].dropna()
             if len(sr) >= k:
                 for score in range(1, 6):
                     mix.append({"Area": LONG[item], "Score": str(score), "Share": float((sr == score).mean())})
@@ -206,114 +295,117 @@ def page_dashboard():
             plot(alt.Chart(pd.DataFrame(mix)).mark_bar().encode(
                 x=alt.X("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"), y=alt.Y("Area:N", sort=LONG_ORDER, title=None),
                 color=alt.Color("Score:N", scale=alt.Scale(domain=["1", "2", "3", "4", "5"], range=[ui.SCALE[i] for i in range(1, 6)]),
-                                legend=alt.Legend(title="Score (1 low, 5 high)", orient="bottom", direction="horizontal")),
-                order=alt.Order("Score:N")), 300)
+                                legend=alt.Legend(title="Score (1 low, 5 high)", orient="bottom", direction="horizontal")), order=alt.Order("Score:N")), 300)
 
-    with t_theme:
-        names = {t["id"]: t["name"] for t in db.get_published("codebook")[1]["themes"]}
-        l, r_ = st.columns(2)
-        with l:
-            st.subheader("Why people left")
-            if source == "demo":
-                ex = demo_exits()["top_reason"].map(lambda t: names.get(t, t)).value_counts()
-                tot = int(ex.sum())
-                st.caption(f"Main reason chosen by the {tot} Mentors who completed an exit interview.")
-            else:
-                resp = pd.DataFrame(db.fetch_responses())
-                ex = resp[(resp["qtype"] == "Checklist") & (resp["checklist_top"].fillna("") != "")]["checklist_top"].value_counts() if not resp.empty else pd.Series(dtype=int)
-                tot = int(ex.sum())
-                st.caption(f"Main reason chosen in {tot} exit interview(s).")
-            shown = ex[ex >= k]
-            if shown.empty:
-                st.info(f"No reason has {k} or more answers yet.")
-            else:
-                bar = shown.rename_axis("Reason").reset_index(name="Mentors")
-                ch = alt.Chart(bar).mark_bar(color=ORANGE_).encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=320)))
-                plot(ch + ch.mark_text(align="left", dx=4, color="#282828").encode(text="Mentors:Q"), 280)
-            hidden = int((ex < k).sum())
-            if hidden:
-                st.caption(f"{hidden} other reason(s) with fewer than {k} answers are hidden.")
-        with r_:
-            st.subheader("Where Mentors rate things low")
-            st.caption(f"Share scoring 1 or 2 in {sel}.")
-            lows = []
-            for item, th in ITEM_THEME.items():
-                s = cur[item].dropna()
-                lows.append({"Area": LABEL[item], "Share rating low": (float((s <= 2).mean()) if len(s) >= k else None)})
-            lows = pd.DataFrame(lows).sort_values("Share rating low", ascending=False, na_position="last")
-            ld = lows.dropna()
-            if ld.empty:
-                st.info(f"Each area needs at least {k} answers to be shown.")
-            else:
-                lb = alt.Chart(ld).mark_bar(color=BLUE_).encode(x=alt.X("Share rating low:Q", axis=alt.Axis(format="%"), title=None),
-                                                               y=alt.Y("Area:N", sort="-x", title=None))
-                plot(lb + lb.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Share rating low:Q", format=".0%")), 280)
-            with st.expander("See the numbers"):
-                st.dataframe(lows, hide_index=True, width="stretch",
-                             column_config={"Share rating low": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
-        st.subheader("In their words")
+
+def _themes(source, v, waves, sel, k):
+    """Theme explorer: what Mentors said in their spoken answers, by season."""
+    names = {t["id"]: t["name"] for t in db.get_published("codebook")[1]["themes"]}
+    tg = demo_tags() if source == "demo" else live_tags()
+    if tg.empty:
+        st.info("No tagged answers yet. Spoken answers become themes once they are transcribed and tagged. The program admin does this on the **Tag answers** page. "
+                "Switch to the demo data above to see how this tab will look.")
+    else:
         if source == "demo":
-            q = demo_quotes()
-            themes = [t for t in q if t in names]
-            tsel = st.selectbox("Theme", themes, format_func=lambda t: f"{names[t]} ({len(q[t])})")
-            st.caption("Excerpts copied exactly from mock transcripts tagged by Claude. Excerpts about life changes outside work are counted but never shown, and any answer that raised a safety concern is handled by a person outside the dashboard.")
-            for item in q[tsel]:
-                tag = {"Positive": "A reason to stay", "Negative": "A concern"}.get(item["v"], "Mixed")
-                st.markdown(f"> “{item['q']}”  \n> <span style='color:gray'>{tag}</span>", unsafe_allow_html=True)
+            st.caption("Themes come from synthetic spoken answers tagged for the demo. The quotes are illustrative examples written for the demo, not real Mentors.")
         else:
-            st.info("Excerpts and theme counts from live answers appear here once spoken answers have been transcribed and tagged. That is the next phase.")
+            st.caption("Themes come from spoken answers tagged by Claude and checked by a person.")
+        tw = [w for w in waves if w in set(tg["wave"])]
+        den = tg.groupby("wave")["mentor"].nunique()
+        mode = st.radio("Show", ["What is hard", "What is working"], horizontal=True, key="theme_mode")
+        val = "Negative" if mode == "What is hard" else "Positive"
+        scale_range = ["#FFFFFF", ORANGE_] if val == "Negative" else ["#FFFFFF", BLUE_]
+        sub = tg[(tg["valence"] == val) & (tg["theme"] != "T10")]
+        cnt = sub.groupby(["wave", "theme"])["mentor"].nunique().reset_index(name="n")
+        recs = []
+        for w in tw:
+            for t_, nm in names.items():
+                if t_ == "T10":
+                    continue
+                n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
+                if den.get(w, 0) >= k and n_ >= k:
+                    recs.append({"Season": w, "Theme": nm, "Share": n_ / den[w], "Mentors": int(n_)})
+        st.subheader("Share of Mentors mentioning each theme")
+        if recs:
+            hm = pd.DataFrame(recs)
+            base = alt.Chart(hm).encode(x=alt.X("Season:N", sort=tw, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                        y=alt.Y("Theme:N", sort=alt.EncodingSortField("Share", op="sum", order="descending"), title=None, axis=alt.Axis(labelLimit=340)))
+            rect = base.mark_rect(stroke="white", strokeWidth=2).encode(color=alt.Color("Share:Q", scale=alt.Scale(range=scale_range), legend=None))
+            txt = base.mark_text(fontSize=13, fontWeight="bold", color="#282828").encode(text=alt.Text("Share:Q", format=".0%"))
+            plot(rect + txt, 420)
+            st.caption(f"Share of Mentors with a spoken answer that season. A theme with fewer than {k} Mentors in a season is left blank, and life changes outside work are counted only in totals, never shown.")
+        else:
+            st.info(f"No theme was mentioned by {k} or more Mentors yet.")
 
-    with t_school:
-        st.subheader("Does school-day time feel meaningful?")
-        base = ev if tb == "Everyone" or not has_tb else ev[ev["tb"] == TB.index(tb)]
-        if has_acc:
-            recs = []
-            for w in waves:
-                for g, flag in (("Restricted access", 1), ("Open access", 0)):
-                    s = base[(base["wave"] == w) & (base["restricted"] == flag)]["C05"].dropna()
-                    recs.append({"Quarter": w, "Group": g, "Average": float(s.mean()) if len(s) >= k else None})
-            df_ = pd.DataFrame(recs).dropna()
-            if df_.empty:
-                st.info(f"Each group needs at least {k} answers to be shown.")
-            else:
-                ch = alt.Chart(df_).mark_line(point=True).encode(
-                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
-                    color=alt.Color("Group:N", scale=alt.Scale(range=[ORANGE_, BLUE_]), legend=alt.Legend(title=None, orient="bottom")))
-                plot(ch, 300)
-            st.subheader(f"How scores spread in {sel}")
-            mixr = []
-            for g, flag in (("Restricted access", 1), ("Open access", 0)):
-                sr = base[(base["wave"] == sel) & (base["restricted"] == flag)]["C05"].dropna()
-                if len(sr) >= k:
-                    for score in range(1, 6):
-                        mixr.append({"Group": g, "Score": str(score), "Share": float((sr == score).mean())})
-            if mixr:
-                plot(alt.Chart(pd.DataFrame(mixr)).mark_bar().encode(
-                    x=alt.X("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"), y=alt.Y("Group:N", title=None),
-                    color=alt.Color("Score:N", scale=alt.Scale(domain=["1", "2", "3", "4", "5"], range=[ui.SCALE[i] for i in range(1, 6)]),
-                                    legend=alt.Legend(title="Score (1 low, 5 high)", orient="bottom", direction="horizontal")),
-                    order=alt.Order("Score:N")), 160)
-            st.subheader("Does it relate to staying?")
-            both = base[base["C05"].notna() & base["C01"].notna()].copy()
-            both["Band"] = pd.cut(both["C05"], [0, 2, 3, 5], labels=["Scored it 1 or 2", "Scored it 3", "Scored it 4 or 5"])
-            ib = both.groupby("Band", observed=True)["C01"].agg(["count", "mean"]).reset_index()
-            ib = ib[ib["count"] >= k]
-            if not ib.empty:
-                bc = alt.Chart(ib).mark_bar(color=BLUE_).encode(x=alt.X("Band:N", title=None, sort=["Scored it 1 or 2", "Scored it 3", "Scored it 4 or 5"], axis=alt.Axis(labelAngle=0)),
-                                                              y=alt.Y("mean:Q", scale=alt.Scale(domain=[1, 5]), title="Average intent to stay (1 to 5)"))
-                plot(bc + bc.mark_text(dy=-8, color="#282828").encode(text=alt.Text("mean:Q", format=".1f")), 260)
-                st.caption("Average intent to stay among Mentors who scored school-day time low, middle, or high, across all quarters.")
-            st.warning("In the demo data, restricted access was set to lower this score, and the link to intent to stay is partly built in. "
-                       "With real data the gap could be larger, smaller, or absent, and a lower score does not prove it causes people to leave.")
+        st.subheader(f"What is new in {sel}")
+        wi = tw.index(sel) if sel in tw else None
+        if wi is None or wi == 0:
+            st.info("A comparison needs this season and an earlier season with tagged answers.")
         else:
-            recs = [{"Quarter": w, "Average": mean_k(base[base["wave"] == w]["C05"], k)} for w in waves]
-            df_ = pd.DataFrame(recs).dropna()
-            if df_.empty:
-                st.info(f"At least {k} answers are needed to show a trend.")
+            pr = tw[wi - 1]
+            ch = []
+            for t_, nm in names.items():
+                if t_ == "T10":
+                    continue
+                def share(w):
+                    n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
+                    return n_ / den[w] if den.get(w, 0) >= k and n_ >= k else None
+                a, b = share(pr), share(sel)
+                if a is not None and b is not None:
+                    ch.append({"Theme": nm, "Change": b - a})
+            if ch:
+                cd = pd.DataFrame(ch)
+                more_good = val == "Positive"
+                cd["Direction"] = np.where(cd["Change"] >= 0, "More mentions", "Fewer mentions")
+                up_color, down_color = (BLUE_, ORANGE_) if more_good else (ORANGE_, BLUE_)
+                bar = alt.Chart(cd).mark_bar().encode(
+                    x=alt.X("Change:Q", axis=alt.Axis(format="+%"), title=f"Change in share of Mentors, {pr} to {sel}"),
+                    y=alt.Y("Theme:N", sort=alt.EncodingSortField("Change", order="descending"), title=None, axis=alt.Axis(labelLimit=340)),
+                    color=alt.Color("Direction:N", scale=alt.Scale(domain=["More mentions", "Fewer mentions"], range=[up_color, down_color]),
+                                    legend=alt.Legend(orient="bottom", direction="horizontal")))
+                plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.0%")), 380)
             else:
-                plot(alt.Chart(df_).mark_line(point=True, color=BLUE_, strokeWidth=3).encode(
-                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]))), 300)
-            st.caption("A comparison of restricted and open chapters needs chapter information, which live check-ins do not collect yet.")
+                st.info("Not enough answers on both seasons to compare themes.")
+
+        st.subheader("In their words")
+        qs = sub[(sub["quote"] != "") & (sub["aggregate_only"].astype(int) == 0)]
+        c1, c2 = st.columns(2)
+        tl = [t_ for t_ in names if t_ != "T10" and (qs["theme"] == t_).any()]
+        if not tl:
+            st.info("No excerpts to show yet.")
+        else:
+            tsel = c1.selectbox("Theme", tl, format_func=lambda t_: f"{names[t_]} ({int((qs['theme'] == t_).sum())})")
+            ssel = c2.selectbox("Season", ["All seasons"] + list(reversed(tw)), index=(1 + list(reversed(tw)).index(sel)) if sel in tw else 0)
+            pick = qs[qs["theme"] == tsel]
+            if ssel != "All seasons":
+                pick = pick[pick["wave"] == ssel]
+            if len(pick) and pick["mentor"].nunique() < k:
+                st.info(f"Fewer than {k} Mentors have excerpts here, so they are hidden to protect privacy.")
+            else:
+                uniq = (pick.sort_values("t", ascending=False).groupby("quote", sort=False)
+                        .agg(wave=("wave", "first"), n=("mentor", "nunique")).reset_index().head(8))
+                for _, row in uniq.iterrows():
+                    more = f" · similar answers from {row['n']} Mentors" if row["n"] >= k else ""
+                    st.markdown(f"> “{row['quote']}”  \n> <span style='color:#555'>{row['wave']}{more}</span>", unsafe_allow_html=True)
+            st.caption("Excerpts are copied exactly from answers. Names are never shown. Anything that raised a safety concern is handled by a person outside the dashboard.")
+
+    st.subheader("Why people left")
+    if source == "demo":
+        ex = demo_exits()["top_reason"].map(lambda t_: names.get(t_, t_)).value_counts()
+        st.caption(f"Main reason chosen by the {int(ex.sum())} Mentors who completed an exit interview.")
+    else:
+        resp = pd.DataFrame(db.fetch_responses())
+        ex = resp[(resp["qtype"] == "Checklist") & (resp["checklist_top"].fillna("") != "")]["checklist_top"].value_counts() if not resp.empty else pd.Series(dtype=int)
+        st.caption(f"Main reason chosen in {int(ex.sum())} exit interview(s).")
+    shown = ex[ex >= k]
+    if shown.empty:
+        st.info(f"No reason has {k} or more answers yet.")
+    else:
+        bar = shown.rename_axis("Reason").reset_index(name="Mentors")
+        ch = alt.Chart(bar).mark_bar(color=ORANGE_).encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=340)))
+        plot(ch + ch.mark_text(align="left", dx=4, color="#282828").encode(text="Mentors:Q"), 280)
+    if int((ex < k).sum()):
+        st.caption(f"{int((ex < k).sum())} other reason(s) with fewer than {k} answers are hidden.")
 
 
 # ---------------------------------------------------------------- risk tracker
@@ -398,7 +490,7 @@ def page_risk():
         st.info("No check-ins yet. Switch to the demo data above, or complete a practice check-in.")
         return
     ev = risk.evaluate(data, rules, bands)
-    waves = sorted(ev["wave"].unique())
+    waves = order_waves(ev)
     sel = pick_wave(waves, "risk_wave")
     cur = ev[ev["wave"] == sel]
     n = len(cur)
@@ -416,7 +508,7 @@ def page_risk():
         trend = []
         for w in waves:
             sw = ev[ev["wave"] == w]
-            trend.append({"Quarter": w, "Share with a signal": (float((sw["band"] != "Low").mean()) if len(sw) >= k else None)})
+            trend.append({"Season": w, "Share with a signal": (float((sw["band"] != "Low").mean()) if len(sw) >= k else None)})
         t = pd.DataFrame(trend).dropna()
         d1, d2 = st.columns(2)
         with d1:
@@ -428,7 +520,7 @@ def page_risk():
                                                               legend=alt.Legend(orient="bottom", direction="horizontal")))
             plot(arc, 280)
         with d2:
-            st.markdown("**Priority mix by quarter**")
+            st.markdown("**Priority mix by season**")
             rows_ = []
             for w in waves:
                 sw = ev[ev["wave"] == w]
@@ -436,20 +528,20 @@ def page_risk():
                     for b in ("High", "Medium", "Low"):
                         c_ = int((sw["band"] == b).sum())
                         if c_ >= k:
-                            rows_.append({"Quarter": w, "Priority": b, "Share": c_ / len(sw)})
+                            rows_.append({"Season": w, "Priority": b, "Share": c_ / len(sw)})
             if rows_:
                 plot(alt.Chart(pd.DataFrame(rows_)).mark_bar().encode(
-                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"),
+                    x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"),
                     color=alt.Color("Priority:N", scale=alt.Scale(domain=list(ui.BAND), range=list(ui.BAND.values())),
                                     legend=alt.Legend(orient="bottom", direction="horizontal")),
                     order=alt.Order("order:Q") if False else alt.Order("Priority:N", sort="descending")), 280)
                 st.caption(f"Groups with fewer than {k} Mentors are left out.")
         l, r_ = st.columns(2)
         with l:
-            st.markdown("**Share of Mentors with a signal, by quarter**")
+            st.markdown("**Share of Mentors with a signal, by season**")
             if len(t):
                 plot(alt.Chart(t).mark_line(point=alt.OverlayMarkDef(size=70), color=ORANGE_, strokeWidth=3).encode(
-                    x=alt.X("Quarter:N", title=None, axis=alt.Axis(labelAngle=0)),
+                    x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0)),
                     y=alt.Y("Share with a signal:Q", axis=alt.Axis(format="%"), scale=alt.Scale(domain=[0, max(0.5, float(t["Share with a signal"].max()) + 0.05)]), title=None)), 280)
         with r_:
             st.markdown(f"**Which signals show up most in {sel}**")
@@ -469,22 +561,22 @@ def page_risk():
         rows = []
         for b in ("High", "Medium", "Low"):
             s = lab[lab["band"] == b]
-            rows.append({"Priority": b, "Check-ins": len(s), "Share of all check-ins": len(s) / len(lab), "Left before the next quarter": float(s["left_next"].mean()) if len(s) else None})
+            rows.append({"Priority": b, "Check-ins": len(s), "Share of all check-ins": len(s) / len(lab), "Left before the next season": float(s["left_next"].mean()) if len(s) else None})
         ev_df = pd.DataFrame(rows)
         base_rate = float(lab["left_next"].mean())
         dep = alt.Chart(ev_df).mark_bar().encode(
             x=alt.X("Priority:N", sort=["High", "Medium", "Low"], title=None, axis=alt.Axis(labelAngle=0)),
-            y=alt.Y("Left before the next quarter:Q", axis=alt.Axis(format="%"), title="Left before the next quarter"),
+            y=alt.Y("Left before the next season:Q", axis=alt.Axis(format="%"), title="Left before the next season"),
             color=alt.Color("Priority:N", scale=alt.Scale(domain=list(ui.BAND), range=list(ui.BAND.values())), legend=None))
         avg = alt.Chart(pd.DataFrame({"y": [base_rate]})).mark_rule(color="#282828", strokeDash=[6, 4], strokeWidth=2).encode(y="y:Q")
         lbl = alt.Chart(ev_df).mark_text(dy=-9, color="#282828", fontWeight="bold").encode(
-            x=alt.X("Priority:N", sort=["High", "Medium", "Low"]), y="Left before the next quarter:Q",
-            text=alt.Text("Left before the next quarter:Q", format=".0%"))
+            x=alt.X("Priority:N", sort=["High", "Medium", "Low"]), y="Left before the next season:Q",
+            text=alt.Text("Left before the next season:Q", format=".0%"))
         plot(dep + avg + lbl, 260)
         st.caption(f"The dashed line is the overall rate ({base_rate * 100:.0f}%).")
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
                      column_config={"Share of all check-ins": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent"),
-                                    "Left before the next quarter": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
+                                    "Left before the next season": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
         got = lab[lab["band"] != "Low"]["left_next"].sum() / max(1, lab["left_next"].sum())
         st.caption(f"Overall, {lab['left_next'].mean() * 100:.0f}% of check-ins were followed by a departure. High and medium together held {got * 100:.0f}% of the departures, so about "
                    f"{(1 - got) * 100:.0f}% left without a signal, and most flagged Mentors stayed. The patterns in the demo data were planted, so treat this as a demonstration of how to read the table, not as evidence.")
@@ -504,7 +596,7 @@ def page_risk():
     lst = cur[cur["band"].isin(["High"] if show == "High priority" else ["High", "Medium"])].sort_values(["points", "mentor"], ascending=[False, True])
     done = {a["mentor"] for a in db.support_actions(source) if a["wave"] == sel}
     if lst.empty:
-        st.info("No Mentors match in this quarter.")
+        st.info("No Mentors match in this season.")
     else:
         table = pd.DataFrame({
             "Mentor": lst["mentor"], "Priority": lst["band"], "Points": lst["points"],

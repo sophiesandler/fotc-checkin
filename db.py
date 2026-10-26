@@ -34,7 +34,12 @@ responses = Table("responses", meta,
                   Column("question_id", String(20)), Column("question_version", Integer), Column("qtype", String(20)),
                   Column("rating", String(40)), Column("text_answer", Text), Column("checklist_selected", Text),
                   Column("checklist_top", Text), Column("audio_blob", LargeBinary), Column("audio_note", String(60)),
-                  Column("transcript", Text), Column("skipped", Boolean), Column("linked_themes", Text))
+                  Column("transcript", Text), Column("skipped", Boolean), Column("linked_themes", Text), Column("season", String(20)))
+tags = Table("tags", meta,
+             Column("id", Integer, primary_key=True, autoincrement=True),
+             Column("response_id", Integer), Column("ts", String(40)), Column("theme", String(10)), Column("valence", String(20)),
+             Column("quote", Text), Column("aggregate_only", Boolean), Column("confidence", String(10)),
+             Column("escalation", Boolean), Column("by_user", String(80)))
 support = Table("support_actions", meta,
                 Column("id", Integer, primary_key=True, autoincrement=True),
                 Column("ts", String(40)), Column("source", String(10)), Column("mentor", String(80)),
@@ -78,8 +83,18 @@ def _url():
 def engine():
     e = create_engine(_url(), pool_pre_ping=True)
     meta.create_all(e)
+    migrate(e)
     seed(e)
     return e
+
+
+def migrate(e):
+    """Add columns that newer versions of the app need to tables that already exist."""
+    from sqlalchemy import inspect, text
+    cols = [c["name"] for c in inspect(e).get_columns("responses")]
+    if "season" not in cols:
+        with e.begin() as c:
+            c.execute(text("ALTER TABLE responses ADD COLUMN season VARCHAR(20)"))
 
 
 def using_sqlite():
@@ -246,12 +261,63 @@ def recent_log(n=300):
 
 
 # ---------------- support check-ins offered (risk tracker)
+_ensured = set()
+
+
+def _ensure(table):
+    """Create a table if it is missing. Protects against a running app that started before the table was added."""
+    if table.name not in _ensured:
+        table.create(engine(), checkfirst=True)
+        _ensured.add(table.name)
+
+
 def add_support_actions(source, mentors, wave, by_user, note=""):
+    _ensure(support)
     with engine().begin() as c:
         for m in mentors:
             c.execute(insert(support).values(ts=now(), source=source, mentor=m, wave=wave, by_user=by_user, note=note))
 
 
 def support_actions(source):
+    _ensure(support)
     with engine().connect() as c:
         return [dict(r) for r in c.execute(select(support).where(support.c.source == source).order_by(support.c.id.desc())).mappings()]
+
+
+# ---------------- transcripts and tags (theme explorer)
+def spoken_responses():
+    cols = [responses.c.id, responses.c.ts, responses.c.participant_code, responses.c.season, responses.c.question_id,
+            responses.c.question_version, responses.c.text_answer, responses.c.transcript, responses.c.audio_note, responses.c.skipped]
+    with engine().connect() as c:
+        rows = c.execute(select(*cols).where((responses.c.qtype == "Spoken") & (responses.c.skipped == False)).order_by(responses.c.id.desc())).mappings()  # noqa: E712
+        return [dict(r) for r in rows]
+
+
+def set_transcript(response_id, text_):
+    with engine().begin() as c:
+        c.execute(update(responses).where(responses.c.id == response_id).values(transcript=text_))
+
+
+def tagged_ids():
+    _ensure(tags)
+    with engine().connect() as c:
+        return {r[0] for r in c.execute(select(tags.c.response_id).distinct())}
+
+
+def add_tags(response_id, rows, username, escalation=False):
+    _ensure(tags)
+    with engine().begin() as c:
+        c.execute(delete(tags).where(tags.c.response_id == response_id))
+        for t in rows:
+            c.execute(insert(tags).values(response_id=response_id, ts=now(), theme=t["theme"], valence=t["valence"], quote=t.get("quote", ""),
+                                          aggregate_only=bool(t.get("aggregate_only")), confidence=t.get("confidence", ""),
+                                          escalation=bool(escalation), by_user=username))
+
+
+def get_tags():
+    _ensure(tags)
+    cols = [tags.c.id, tags.c.response_id, tags.c.theme, tags.c.valence, tags.c.quote, tags.c.aggregate_only, tags.c.escalation,
+            responses.c.participant_code, responses.c.season, responses.c.ts, responses.c.question_id]
+    with engine().connect() as c:
+        rows = c.execute(select(*cols).select_from(tags.join(responses, tags.c.response_id == responses.c.id))).mappings()
+        return [dict(r) for r in rows]

@@ -77,7 +77,7 @@ def diff_questions(old, new):
         if a.get("active", True) != q.get("active", True):
             msgs.append(("warn" if core else "info", f"{qid} was {'restored' if q.get('active', True) else 'retired'}"))
         if sorted(a.get("quarters", [])) != sorted(q.get("quarters", [])):
-            msgs.append(("info", f"Changed which quarters ask {qid}"))
+            msgs.append(("info", f"Changed which seasons ask {qid}"))
         if a.get("block") != q.get("block"):
             msgs.append(("warn", f"{qid} moved from {a.get('block')} to {q.get('block')}"))
     return msgs
