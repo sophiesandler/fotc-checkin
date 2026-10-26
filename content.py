@@ -108,7 +108,7 @@ def diff_codebook(old, new):
     return msgs
 
 
-def build_prompt(codebook, version):
+def build_prompt(codebook, version, compact=False):
     """The same tagging prompt as build_tagging_prompt.py, but built from the published themes and rules in the database."""
     themes = [t for t in codebook["themes"] if t.get("active", True)]
     rules = codebook["rules"]
@@ -122,6 +122,9 @@ WHO AND WHAT YOU ARE CODING
 - Do not repeat names or other identifying details in rationale or review_reason fields."""]
     parts.append(f"THEME CODEBOOK (published themes and rules, version {version})\nUse only these theme IDs. Keywords and example phrases are hints, never requirements: a theme can apply without any listed word, and a listed word does not by itself make a theme apply.\n")
     for t in themes:
+        if compact:
+            parts.append(f"{t['id']} | {t['name']}: {t['definition']}")
+            continue
         block = [f"{t['id']} | {t['name']}", f"  Definition: {t['definition']}", f"  Context: {t.get('context', '')}"]
         if t.get("phrases"):
             block.append("  Illustrative phrases: " + " / ".join(f'"{p}"' for p in t["phrases"]))

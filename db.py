@@ -297,7 +297,7 @@ def support_actions(source):
 
 # ---------------- transcripts and tags (theme explorer)
 def spoken_responses():
-    cols = [responses.c.id, responses.c.ts, responses.c.participant_code, responses.c.season, responses.c.question_id,
+    cols = [responses.c.id, responses.c.session_id, responses.c.ts, responses.c.participant_code, responses.c.season, responses.c.question_id,
             responses.c.question_version, responses.c.text_answer, responses.c.transcript, responses.c.audio_note, responses.c.skipped]
     with engine().connect() as c:
         rows = c.execute(select(*cols).where((responses.c.qtype == "Spoken") & (responses.c.skipped == False)).order_by(responses.c.id.desc())).mappings()  # noqa: E712
@@ -327,7 +327,7 @@ def add_tags(response_id, rows, username, escalation=False):
 
 def get_tags():
     _ensure(tags)
-    cols = [tags.c.id, tags.c.response_id, tags.c.theme, tags.c.valence, tags.c.quote, tags.c.aggregate_only, tags.c.escalation,
+    cols = [tags.c.id, tags.c.response_id, tags.c.theme, tags.c.valence, tags.c.quote, tags.c.aggregate_only, tags.c.escalation, tags.c.by_user,
             responses.c.participant_code, responses.c.season, responses.c.ts, responses.c.question_id]
     with engine().connect() as c:
         rows = c.execute(select(*cols).select_from(tags.join(responses, tags.c.response_id == responses.c.id))).mappings()

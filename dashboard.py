@@ -398,7 +398,7 @@ def _themes(source, v, waves, sel, k):
         if source == "demo":
             st.caption("Themes come from synthetic spoken answers tagged for the demo. The quotes are illustrative examples written for the demo, not real Mentors.")
         else:
-            st.caption("Themes come from spoken answers tagged by Claude and checked by a person.")
+            st.caption("Themes come from spoken answers tagged automatically by AI. The program admin can review and correct them on the Answers page.")
         tw = [w for w in waves if w in set(tg["wave"])]
         den = tg.groupby("wave")["mentor"].nunique()
         mode = st.radio("Show", ["What is hard", "What is working"], horizontal=True, key="theme_mode")

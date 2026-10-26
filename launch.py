@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 import db
+import pipeline as pl
 import transcribe as tr
 import ui
 from auth import check_pw, hash_pw, require
@@ -63,6 +64,7 @@ def _auto():
         ("a_consent", "Approvals", "The consent wording is no longer marked as a draft", "Draft wording" not in consent, "Edit it in Settings once Friends of the Children has approved it."),
         ("a_pilotq", "Set up", "Pilot feedback questions are in the question set", {"P01", "P02", "P03"} <= have_p, "Add them on the Pilot year page, under Pilot feedback."),
         ("a_tr", "Set up", "Automatic transcription is set up (optional)", bool(tr.providers()), tr.status_line()),
+        ("a_tag", "Set up", "Automatic tagging is set up (optional)", bool(pl.tagging_providers()), pl.tagging_status()),
     ]
 
 

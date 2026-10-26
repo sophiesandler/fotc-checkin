@@ -8,6 +8,7 @@ import streamlit as st
 import content as ct
 import db
 import seasons
+import pipeline as pl
 import transcribe as tr
 import ui
 from auth import require
@@ -52,11 +53,10 @@ def page_checkin():
         return
 
     if ci["phase"] == "done":
-        if not ci.get("transcribed"):
-            ci["transcribed"] = True
-            if db.get_setting("auto_transcribe", "No") == "Yes" and tr.providers():
-                with st.spinner("Saving your answers..."):
-                    tr.auto_for_session(ci["sid"])
+        if not ci.get("processed"):
+            ci["processed"] = True
+            if (db.get_setting("auto_transcribe", "No") == "Yes" and tr.providers()) or (db.get_setting("auto_tag", "No") == "Yes" and pl.tagging_providers()):
+                pl.start_background(ci["sid"])     # runs in the background, so the Mentor never waits
         st.subheader("Thank you")
         st.markdown(db.get_setting("thanks_text"))
         done_ = [a for a in db.get_actions() if a["status"] == "Done"][:5]
@@ -538,6 +538,9 @@ def page_settings():
     st.caption("Automatic transcription: " + tr.status_line())
     auto_t = st.selectbox("Transcribe automatically when a Mentor finishes?", ["No", "Yes"], index=1 if db.get_setting("auto_transcribe", "No") == "Yes" else 0,
                           help="Needs the transcription service to be set up. If it fails, the answer is saved and the admin can transcribe it on the Answers page.")
+    st.caption("Automatic tagging: " + pl.tagging_status())
+    auto_g = st.selectbox("Tag answers with themes automatically?", ["No", "Yes"], index=1 if db.get_setting("auto_tag", "No") == "Yes" else 0,
+                          help="After a Mentor finishes, each answer is transcribed (if needed) and tagged with themes in the background. The admin can review and correct tags on the Answers page.")
     keep = list(ct.RETENTION)
     ret = st.selectbox("What happens to recordings?", keep, index=keep.index(db.get_setting("audio_retention", "after_read")) if db.get_setting("audio_retention", "after_read") in keep else 1,
                        format_func=ct.RETENTION.get, help="The consent text says recordings are deleted after transcription. Pick the rule that matches what you promised Mentors.")
@@ -548,13 +551,15 @@ def page_settings():
                     "3. In Streamlit, open **Manage app > Settings > Secrets** and add a line: `GROQ_API_KEY = \"your key\"`.\n"
                     "4. Save and reboot. The status above should say Ready.\n\n"
                     "The free plan has daily limits (about 8 hours of audio a day at the time of writing), which is far more than a pilot needs.\n\n"
+                    "**Automatic tagging with themes:** the free Groq key above also tags answers using a free language model, so there is nothing more to set up. "
+                    "For the best quality, add `ANTHROPIC_API_KEY = \"your key\"` (an Anthropic API account; it charges a few cents per hundred answers). If both are set, Claude is used.\n\n"
                     "**Paid option: OpenAI.** Add `OPENAI_API_KEY = \"your key\"` the same way. It charges per minute of audio. If both keys are set, the free one is used first.\n\n"
                     "**Recordings are sent to that service, so get Friends of the Children's approval, and read the service's data terms, before using real recordings.**")
     consent = st.text_area("Welcome and consent text (Mentors see this first)", db.get_setting("consent_text"), height=260)
     thanks = st.text_area("Thank-you message", db.get_setting("thanks_text"), height=140)
     st.caption("Friends of the Children staff and legal review should approve the consent text before any real use.")
     if st.button("Save settings", type="primary"):
-        for key, val in (("allow_repeat", "Yes" if rep_.startswith("Yes") else "No"), ("auto_transcribe", auto_t), ("audio_retention", ret), ("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
+        for key, val in (("allow_repeat", "Yes" if rep_.startswith("Yes") else "No"), ("auto_transcribe", auto_t), ("auto_tag", auto_g), ("audio_retention", ret), ("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
             db.set_setting(key, val)
         db.log(me["username"], "changed settings")
         st.session_state.flash = "Settings saved."; st.rerun()

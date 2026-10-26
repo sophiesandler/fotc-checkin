@@ -1,9 +1,5 @@
 """Answers: one page for everything about what Mentors said. Listen, transcribe, tag themes, read, and choose standout excerpts."""
-import json
-import re
-
 import pandas as pd
-import requests
 import streamlit as st
 
 import content as ct
@@ -12,77 +8,16 @@ import transcribe as tr
 import ui
 from auth import require
 
-VALENCE = {"Positive", "Negative", "Mixed/Neutral"}
-ESC = {"personal_safety", "harassment_discrimination", "child_welfare", "self_harm_or_crisis"}
-norm = lambda s: re.sub(r"\s+", " ", (s or "").replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')).strip()
-
-
-def parse_reply(reply, source_text, theme_ids):
-    """Check Claude's reply. Returns (errors, tag rows, escalation flags)."""
-    errs, rows, flags = [], [], []
-    try:
-        data = json.loads(re.sub(r"^```(?:json)?|```$", "", reply.strip(), flags=re.MULTILINE).strip())
-    except Exception:
-        return ["That does not look like the JSON reply. Copy Claude's whole reply, starting with { and ending with }."], [], []
-    text = norm(source_text)
-    if not isinstance(data, dict) or "segments" not in data:
-        return ["The reply is missing the segments list."], [], []
-    for sg in data.get("segments", []):
-        for f in ("primary_theme", "secondary_theme"):
-            v = sg.get(f)
-            if v is not None and v not in theme_ids:
-                errs.append(f"Segment {sg.get('segment_id')}: {v} is not a theme in the themes and rules.")
-        if sg.get("valence") not in VALENCE:
-            errs.append(f"Segment {sg.get('segment_id')}: valence must be Positive, Negative, or Mixed/Neutral.")
-        if norm(sg.get("supporting_quote")) not in text:
-            errs.append(f"Segment {sg.get('segment_id')}: the quote is not an exact excerpt of the answer, so it was not accepted.")
-        rows.append(dict(theme=sg.get("primary_theme"), valence=sg.get("valence"), quote=sg.get("supporting_quote", ""),
-                         aggregate_only=bool(sg.get("aggregate_only")) or sg.get("primary_theme") == "T10", confidence=sg.get("confidence", "")))
-    for e in data.get("escalation_flags", []) or []:
-        if e.get("category") not in ESC:
-            errs.append("An escalation flag has an unknown category.")
-        flags.append(e)
-    return errs, rows, flags
+import pipeline as pl
+from pipeline import message as _message, parse_reply, tag_one as _tag_one_impl  # noqa: F401  (parse_reply is also used by tests)
 
 
 def claude_available():
-    return bool(tr._secret("ANTHROPIC_API_KEY"))
-
-
-def claude_tag(system_prompt, user_msg):
-    """Ask Claude to tag one answer. Returns (reply_text, error)."""
-    try:
-        r = requests.post("https://api.anthropic.com/v1/messages",
-                          headers={"x-api-key": tr._secret("ANTHROPIC_API_KEY"), "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                          json={"model": tr._secret("ANTHROPIC_MODEL", "claude-sonnet-5-5"), "max_tokens": 2000, "system": system_prompt,
-                                "messages": [{"role": "user", "content": user_msg}]}, timeout=120)
-    except Exception as e:
-        return "", f"Could not reach Claude ({type(e).__name__})."
-    if r.status_code != 200:
-        return "", f"Claude refused the request (code {r.status_code}). Check the key and the account balance."
-    try:
-        return r.json()["content"][0]["text"], ""
-    except Exception:
-        return "", "Claude's reply could not be read."
-
-
-def _message(qid, qtext, rid, text):
-    return f'<question id="{qid}">{qtext}</question>\n<transcript id="R{rid}">{text}</transcript>\nTag this transcript according to the instructions. Return JSON only.'
+    return bool(pl.tagging_providers())
 
 
 def _tag_one(rid, qid, qtext, text, user, codebook, ver):
-    """Tag one answer with Claude. Returns (ok, message)."""
-    reply, err = claude_tag(ct.build_prompt(codebook, ver), _message(qid, qtext, rid, text))
-    if err:
-        return False, err
-    errs, tags, flags = parse_reply(reply, text, {t["id"] for t in codebook["themes"]})
-    if errs:
-        return False, errs[0]
-    if not tags and not flags:
-        return False, "No themes found (a very short answer, perhaps)."
-    db.add_tags(int(rid), tags, user, escalation=bool(flags))
-    db.log(user, "tagged an answer with Claude", f"response {rid}: {len(tags)} tag(s), escalation={bool(flags)}")
-    return True, "Tagged."
+    return pl.tag_one(rid, qid, qtext, text, user, codebook, ver)
 
 
 def page_answers():
@@ -108,15 +43,17 @@ def page_answers():
     done_tags = db.tagged_ids()
     esc_ids = {t["response_id"] for t in db.get_tags() if t["escalation"]}
     reviews = {r["response_id"]: r for r in db.get_reviews()}
-    tag_by = {}
+    tag_by, auto_ids = {}, set()
     for t in db.get_tags():
         tag_by.setdefault(t["response_id"], []).append(t["theme"])
+        if str(t.get("by_user", "")).startswith("auto:"):
+            auto_ids.add(t["response_id"])
     names = {t["id"]: t["name"] for t in codebook["themes"]}
     recs = []
     for r in rows:
         text = (r["transcript"] or r["text_answer"] or "").strip()
         rv = reviews.get(r["id"], {})
-        status = "Tagged" if r["id"] in done_tags else ("Ready to tag" if text else "Needs transcript")
+        status = ("Tagged (auto)" if r["id"] in auto_ids else "Tagged") if r["id"] in done_tags else ("Ready to tag" if text else "Needs transcript")
         recs.append(dict(id=r["id"], mentor=r["participant_code"], season=r["season"] or "", qid=r["question_id"], text=text, audio_note=r["audio_note"] or "",
                          qver=r["question_version"], status=status, read=bool(rv.get("reviewed")), star=bool(rv.get("starred")), excerpt=rv.get("excerpt", ""),
                          themes=", ".join(sorted({names.get(t, t) for t in tag_by.get(r["id"], [])})), esc=r["id"] in esc_ids, typed=bool((r["text_answer"] or "").strip())))
@@ -126,63 +63,49 @@ def page_answers():
     c[0].metric("Spoken answers", len(df))
     c[1].metric("Need a transcript", int((df["status"] == "Needs transcript").sum()))
     c[2].metric("Ready to tag", int((df["status"] == "Ready to tag").sum()))
-    c[3].metric("Tagged", int((df["status"] == "Tagged").sum()))
+    c[3].metric("Tagged", int(df["status"].isin(["Tagged", "Tagged (auto)"]).sum()))
     c[4].metric("Read", int(df["read"].sum()))
     c[5].metric("Starred", int(df["star"].sum()))
 
     # ---- do many at once
-    ui.section("Do many at once", "Turn on automatic steps so recordings do not have to be handled one by one. These steps are optional.", level=3)
-    b1, b2 = st.columns(2)
-    pend = tr.pending_ids()
-    with b1:
-        if tr.providers():
-            if st.button(f"Transcribe all recordings ({len(pend)} waiting)", disabled=not pend):
-                okc, bad = 0, []
-                prog = st.progress(0.0)
-                for i, rid_ in enumerate(pend):
-                    ok_, m_ = tr.transcribe_response(rid_, user["username"])
-                    okc += ok_
-                    if not ok_:
-                        bad.append(m_)
-                    prog.progress((i + 1) / len(pend))
-                st.session_state.flash = f"Transcribed {okc} of {len(pend)}." + (f" First problem: {bad[0]}" if bad else "")
-                st.rerun()
-        else:
-            st.caption("Automatic transcription is not set up. " + tr.status_line() + " Until then, type each transcript in step 1 below.")
-    with b2:
-        ready = df[(df["status"] == "Ready to tag")]
-        if claude_available():
-            if st.button(f"Tag all ready answers with Claude ({len(ready)})", disabled=ready.empty):
-                okc, bad = 0, []
-                prog = st.progress(0.0)
-                for i, r in enumerate(ready.itertuples()):
-                    ok_, m_ = _tag_one(r.id, r.qid, qtexts_now.get(r.qid, r.qid), r.text, user["username"], codebook, codebook_ver)
-                    okc += ok_
-                    if not ok_:
-                        bad.append(f"#{r.id}: {m_}")
-                    prog.progress((i + 1) / len(ready))
-                st.session_state.flash = f"Tagged {okc} of {len(ready)}." + (f" First problem: {bad[0]}" if bad else "")
-                st.rerun()
-            st.caption("This sends the answer text (never names) to Claude. Get Friends of the Children's approval before using real answers.")
-        else:
-            st.caption("Automatic tagging is off. Without it, tag by hand in step 2 below (copy a message into a Claude chat, paste the reply back).")
+    ui.section("Process everything that is waiting", "Purpose: do the transcribing and tagging for all waiting answers in one click. How to use: set up the services in Settings, then click. With both turned on in Settings, this already happens by itself shortly after each Mentor finishes.", level=3)
+    need_t, need_g = pl.waiting()
+    st.caption(f"Transcription: {tr.status_line()}  \nTagging: {pl.tagging_status()}")
+    can_do = bool(tr.providers() or pl.tagging_providers())
+    if st.button(f"Process all waiting answers ({need_t} to transcribe, {need_g} to tag)", disabled=not (can_do and (need_t or need_g))):
+        todo = [r["id"] for r in db.spoken_responses()]
+        done_n, problems = 0, []
+        prog = st.progress(0.0)
+        for i, rid_ in enumerate(todo):
+            msgs = pl.process_response(rid_, user["username"])
+            done_n += 1 if msgs and all(("Tagged." == m or "Transcribed." == m) for m in msgs) else 0
+            problems += [f"#{rid_}: {m}" for m in msgs if m not in ("Tagged.", "Transcribed.")]
+            prog.progress((i + 1) / len(todo))
+            if any("limit was reached" in m for m in msgs):
+                problems.append("A free-plan limit was reached. Wait a minute and click again to continue.")
+                break
+        st.session_state.flash = f"Processed {done_n} answer(s)." + (f" First problem: {problems[0]}" if problems else "")
+        st.rerun()
+    if esc_ids:
+        st.error(f"{len(esc_ids)} answer(s) raised a safety or welfare flag: #" + ", #".join(str(i) for i in sorted(esc_ids))
+                 + ". Follow Friends of the Children's procedure and tell the designated person. These stay out of the dashboard.")
 
     # ---- the list
     ui.section("All spoken answers", "Filter the list, then open one answer below. Status shows the next step for each answer.", level=3)
     f1, f2, f3 = st.columns(3)
     sf = f1.selectbox("Season", ["All"] + sorted({x for x in df["season"] if x}), key="ans_season")
     qf = f2.selectbox("Question", ["All"] + sorted(df["qid"].unique()), key="ans_q")
-    stf = f3.selectbox("Show", ["All", "Needs transcript", "Ready to tag", "Tagged", "Not yet read", "Starred"], key="ans_status")
+    stf = f3.selectbox("Show", ["All", "Needs transcript", "Ready to tag", "Tagged", "Tagged (auto)", "Not yet read", "Starred"], key="ans_status")
     v = df
     if sf != "All":
         v = v[v["season"] == sf]
     if qf != "All":
         v = v[v["qid"] == qf]
-    v = {"All": v, "Needs transcript": v[v["status"] == "Needs transcript"], "Ready to tag": v[v["status"] == "Ready to tag"], "Tagged": v[v["status"] == "Tagged"],
+    v = {"All": v, "Needs transcript": v[v["status"] == "Needs transcript"], "Ready to tag": v[v["status"] == "Ready to tag"], "Tagged": v[v["status"].isin(["Tagged", "Tagged (auto)"])], "Tagged (auto)": v[v["status"] == "Tagged (auto)"],
          "Not yet read": v[~v["read"]], "Starred": v[v["star"]]}[stf]
     tbl = pd.DataFrame({"ID": v["id"], "Mentor": v["mentor"], "Season": v["season"], "Question": v["qid"], "Status": v["status"], "Answer": v["text"],
                         "Themes": v["themes"], "Read": v["read"].map({True: "yes", False: ""}), "Starred": v["star"].map({True: "★", False: ""})})
-    colors = {"Tagged": "color:#1B5E20;font-weight:700", "Ready to tag": "color:#1A74B8;font-weight:700", "Needs transcript": "color:#C94A20;font-weight:700"}
+    colors = {"Tagged": "color:#1B5E20;font-weight:700", "Tagged (auto)": "color:#1B5E20;font-weight:700", "Ready to tag": "color:#1A74B8;font-weight:700", "Needs transcript": "color:#C94A20;font-weight:700"}
     st.dataframe(tbl.style.map(lambda x: colors.get(x, ""), subset=["Status"]), hide_index=True, width="stretch", column_config={"Answer": st.column_config.TextColumn(width="large")})
     if v.empty:
         _everything(user)
@@ -207,8 +130,11 @@ def page_answers():
                 st.session_state.last_audio = rid
     elif r["audio_note"] == "deleted":
         st.caption("The recording was deleted. The transcript is kept.")
+    if r["audio_note"] == "recorded" and not r["text"].strip() and not tr.providers():
+        st.info("Automatic transcription is not set up, so this recording has not been written out yet. Listen to it, type what was said in the box below, and click Save transcript. "
+                "To turn on automatic transcription, see Settings.")
     if r["audio_note"] in ("recorded", "deleted") or not r["typed"]:
-        cur = st.text_area("Transcript", value=r["text"], key=f"tr_{rid}", height=130,
+        cur = st.text_area("Transcript", value=r["text"], key=f"tr_{rid}", height=130, placeholder="Type what was said in the recording here.",
                            help="Automatic transcripts are close but not perfect. Check names, places, and numbers.")
         t1, t2, t3 = st.columns(3)
         if t1.button("Save transcript", key=f"st_{rid}"):
@@ -242,12 +168,12 @@ def page_answers():
             st.dataframe(pd.DataFrame(mine)[["theme", "valence", "quote", "aggregate_only", "escalation"]].rename(
                 columns={"theme": "Theme", "valence": "Valence", "quote": "Exact words", "aggregate_only": "Counted only in totals", "escalation": "Safety flag"}),
                 hide_index=True, width="stretch")
-        if claude_available() and st.button("Tag with Claude" if not mine else "Tag again with Claude", key=f"tc_{rid}"):
-            with st.spinner("Asking Claude..."):
+        if pl.tagging_providers() and st.button("Tag automatically" if not mine else "Tag again automatically", key=f"tc_{rid}"):
+            with st.spinner("Tagging..."):
                 ok_, m_ = _tag_one(rid, r["qid"], qtext, text, user["username"], codebook, codebook_ver)
             st.session_state.flash = "Tagged. Check the themes below." if ok_ else m_
             st.rerun()
-        with st.expander("Tag by hand instead", expanded=not claude_available() and not mine):
+        with st.expander("Tag by hand instead", expanded=not pl.tagging_providers() and not mine):
             st.caption("Open a new Claude chat. First paste the tagging instructions (Themes and rules > Tagging instructions > Download). Then paste this message and send it.")
             st.code(_message(r["qid"], qtext, rid, text), language="text")
             reply = st.text_area("Paste Claude's reply here", key=f"rp_{rid}", height=160)
