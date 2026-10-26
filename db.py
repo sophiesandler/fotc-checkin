@@ -35,6 +35,10 @@ responses = Table("responses", meta,
                   Column("rating", String(40)), Column("text_answer", Text), Column("checklist_selected", Text),
                   Column("checklist_top", Text), Column("audio_blob", LargeBinary), Column("audio_note", String(60)),
                   Column("transcript", Text), Column("skipped", Boolean), Column("linked_themes", Text))
+support = Table("support_actions", meta,
+                Column("id", Integer, primary_key=True, autoincrement=True),
+                Column("ts", String(40)), Column("source", String(10)), Column("mentor", String(80)),
+                Column("wave", String(40)), Column("by_user", String(80)), Column("note", Text))
 audit = Table("audit_log", meta,
               Column("id", Integer, primary_key=True, autoincrement=True),
               Column("ts", String(40)), Column("username", String(80)), Column("action", String(80)), Column("detail", Text))
@@ -239,3 +243,15 @@ def log(username, action, detail=""):
 def recent_log(n=300):
     with engine().connect() as c:
         return [dict(r) for r in c.execute(select(audit).order_by(audit.c.id.desc()).limit(n)).mappings()]
+
+
+# ---------------- support check-ins offered (risk tracker)
+def add_support_actions(source, mentors, wave, by_user, note=""):
+    with engine().begin() as c:
+        for m in mentors:
+            c.execute(insert(support).values(ts=now(), source=source, mentor=m, wave=wave, by_user=by_user, note=note))
+
+
+def support_actions(source):
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(select(support).where(support.c.source == source).order_by(support.c.id.desc())).mappings()]

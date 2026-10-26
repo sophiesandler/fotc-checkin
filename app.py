@@ -5,6 +5,7 @@ st.set_page_config(page_title="Mentor check-in (prototype)", layout="wide")
 
 import db
 import views
+import dashboard
 from auth import login_screen
 
 
@@ -50,11 +51,13 @@ if not user:
 PAGES = {
     "mentor": [st.Page(views.page_checkin, title="Check-in", url_path="checkin", default=True),
                st.Page(views.page_guide, title="Guide", url_path="guide")],
-    "leader": [st.Page(views.page_overview, title="Overview", url_path="overview", default=True),
+    "leader": [st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=True),
+               st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk"),
                st.Page(views.page_questions, title="Questions", url_path="questions"),
                st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
                st.Page(views.page_guide, title="Guide", url_path="guide")],
-    "admin": [st.Page(views.page_overview, title="Overview", url_path="overview", default=True),
+    "admin": [st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=True),
+              st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk"),
               st.Page(views.page_responses, title="Responses", url_path="responses"),
               st.Page(views.page_questions, title="Questions", url_path="questions"),
               st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),

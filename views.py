@@ -569,10 +569,11 @@ A short check-in about your work. It takes a few minutes. Every question can be 
 
 If you share a safety concern, a designated person will follow up so you can get help.""",
     "leader": """### What you can do
-- **Overview** shows group results only. Groups under the minimum size are hidden.
+- **Dashboard** shows group results: trends, themes, and school-day time. Groups under the minimum size are hidden.
+- **Risk tracker** shows the share of Mentors with a support signal, and which signals appear most. Individual Mentors are not shown to you.
 - **Questions** and **Coding key** show what is being asked and how answers are tagged. Only the program admin can edit them.
 
-You cannot see individual Mentors' answers. That protects trust in the check-in.""",
+Use the switch at the top of each page to look at live check-ins or the clearly labeled demo data.""",
     "admin": """### Changing the questions
 1. Open **Questions**, expand a question, and edit it.
 2. Press **Save draft** to keep your work private, or **Review and publish** to see what changes and make it live.
@@ -581,6 +582,11 @@ You cannot see individual Mentors' answers. That protects trust in the check-in.
 
 ### Changing the coding key
 Open **Coding key** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
+
+### Dashboard and Risk tracker
+- **Dashboard** and **Risk tracker** show group results. On the Risk tracker you also see the list of Mentors who might benefit from a supportive check-in, and you can mark when one has been offered.
+- **Change the indicator rules** at the bottom of the Risk tracker. Each rule is a plain statement worth some points, and two cut-offs set High and Medium priority.
+- Use the switch at the top to see live check-ins or the demo data.
 
 ### Looking after people and privacy
 - **People**: add Mentors, set exit interviews, reset passwords.

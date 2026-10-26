@@ -1,0 +1,102 @@
+{
+ "T08": [
+  {
+   "q": "something happens in a family and I'm the first call, and I'm not sure what's mine to handle and what should go to the program team",
+   "v": "Negative"
+  },
+  {
+   "q": "it's that I can't stop thinking about who I didn't get to",
+   "v": "Negative"
+  },
+  {
+   "q": "I'm carrying all of it in my head",
+   "v": "Negative"
+  }
+ ],
+ "T02": [
+  {
+   "q": "my portfolio feels full to the point where something always slips",
+   "v": "Negative"
+  },
+  {
+   "q": "If I had fewer youth maybe I could hold it",
+   "v": "Negative"
+  }
+ ],
+ "T01": [
+  {
+   "q": "there's a lot of stretches where I'm at the Clubhouse and it just feels like waiting",
+   "v": "Negative"
+  },
+  {
+   "q": "I spent most of my weekdays at the Clubhouse without enough to do",
+   "v": "Negative"
+  }
+ ],
+ "T04": [
+  {
+   "q": "She's supportive about it, but I get the sense there isn't really a plan either",
+   "v": "Mixed/Neutral"
+  },
+  {
+   "q": "She checks in on me, not just on my numbers",
+   "v": "Positive"
+  },
+  {
+   "q": "I've talked with my supervisor about making the handoff as gentle as possible and she's been great about that",
+   "v": "Positive"
+  },
+  {
+   "q": "I don't get much feedback from my supervisor on whether I'm doing things right",
+   "v": "Negative"
+  }
+ ],
+ "T11": [
+  {
+   "q": "Those people are the only ones who actually get what this job is like",
+   "v": "Positive"
+  }
+ ],
+ "T07": [
+  {
+   "q": "I also feel lucky that I can pay my rent doing something I believe in",
+   "v": "Positive"
+  }
+ ],
+ "T05": [
+  {
+   "q": "She's also been clear about what a good month looks like for me",
+   "v": "Positive"
+  },
+  {
+   "q": "I'm never really sure what I'm supposed to be doing between drop-off and pick-up, and I don't know who to ask",
+   "v": "Negative"
+  }
+ ],
+ "T99": [
+  {
+   "q": "A lot changed at once, new leadership, a new space, and the whole place felt like it was still figuring itself out",
+   "v": "Negative"
+  },
+  {
+   "q": "parking near the building is a mess if I drive",
+   "v": "Mixed/Neutral"
+  },
+  {
+   "q": "how to request time off or how to get a reimbursement are different depending on who you ask",
+   "v": "Mixed/Neutral"
+  }
+ ],
+ "T03": [
+  {
+   "q": "I'd appreciate some flexibility if it comes to that",
+   "v": "Mixed/Neutral"
+  }
+ ],
+ "T06": [
+  {
+   "q": "the training didn't cover how to ask for it",
+   "v": "Negative"
+  }
+ ]
+}
