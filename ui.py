@@ -114,3 +114,13 @@ def style(chart, height=None):
                             domainColor="#BDBDBD", tickColor="#BDBDBD", labelLimit=320)
             .configure_legend(labelFont=FONT, titleFont=FONT, labelColor=GREY, orient="bottom", title=None)
             .configure_title(font=FONT_COND, color=GREY, anchor="start", fontSize=16))
+
+
+def section(title, purpose=None, level=2):
+    """A clear heading with one line saying what the chart or table is for and how to use it."""
+    if level == 2:
+        st.subheader(title)
+    else:
+        st.markdown(f"#### {title}")
+    if purpose:
+        st.caption(purpose)

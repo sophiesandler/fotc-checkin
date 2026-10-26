@@ -1,4 +1,4 @@
-"""Screens for each role. Phase 1 and 2: sign-in, Mentor check-in, and editors for the questions and coding key."""
+"""Screens for each role. Phase 1 and 2: sign-in, Mentor check-in, and editors for the questions and themes and rules."""
 import copy
 import uuid
 
@@ -8,6 +8,8 @@ import streamlit as st
 import content as ct
 import db
 import seasons
+import transcribe as tr
+import ui
 from auth import require
 
 SECONDS = {"Rating": 15, "Spoken": 60, "Checklist": 30}
@@ -26,22 +28,35 @@ def page_checkin():
     ci = st.session_state.setdefault("ci", {"phase": "consent"})
 
     if ci["phase"] == "consent":
+        fresh = db.get_user(user["username"]) or {}
+        stype = fresh.get("session_type") or "Quarterly"
+        season = seasons.current_label()
+        quarter = seasons.number(seasons.parse(season)[0])
+        ver, qs = db.get_published("questions")
+        session = ct.build_session(qs, stype, quarter, bool(fresh.get("first_year")))
+        minutes = max(1, round(_estimate_minutes(session)))
+        before = [s for s in db.get_sessions() if s["participant_code"] == user["username"] and s["season"] == season and s["session_type"] == stype and s["completed"]]
+        allow_repeat = db.get_setting("allow_repeat", "No") == "Yes"
+        if before and not allow_repeat:
+            st.success(f"You have already completed this season's check-in ({season}). Thank you! There is nothing more to do until the next season opens.")
+            return
+        if before:
+            st.info(f"You have already completed the {season} check-in. Repeats are turned on for practice, so you can take it again.")
+        st.markdown(f"**{ct.type_label(stype)} for {season}:** {len(session)} questions, about {minutes} minute{'s' if minutes != 1 else ''}. You can skip any question.")
         st.markdown(db.get_setting("consent_text"))
         agreed = st.checkbox("I understand and want to continue", key="ci_agree")
         if st.button("Start", type="primary", disabled=not agreed):
-            fresh = db.get_user(user["username"]) or {}
-            stype = fresh.get("session_type") or "Quarterly"
-            season = seasons.current_label()
-            quarter = seasons.number(seasons.parse(season)[0])
-            ver, qs = db.get_published("questions")
-            session = ct.build_session(qs, stype, quarter, bool(fresh.get("first_year")))
-            st.session_state.ci = dict(phase="q", idx=0, sid=uuid.uuid4().hex[:10], ver=ver, session=session,
-                                       stype=stype, quarter=quarter, season=season)
+            st.session_state.ci = dict(phase="q", idx=0, sid=uuid.uuid4().hex[:10], ver=ver, session=session, stype=stype, quarter=quarter, season=season)
             db.start_session(st.session_state.ci["sid"], user["username"], season, stype, len(session))
             st.rerun()
         return
 
     if ci["phase"] == "done":
+        if not ci.get("transcribed"):
+            ci["transcribed"] = True
+            if db.get_setting("auto_transcribe", "No") == "Yes" and tr.providers():
+                with st.spinner("Saving your answers..."):
+                    tr.auto_for_session(ci["sid"])
         st.subheader("Thank you")
         st.markdown(db.get_setting("thanks_text"))
         done_ = [a for a in db.get_actions() if a["status"] == "Done"][:5]
@@ -49,7 +64,7 @@ def page_checkin():
             st.subheader("What changed because of what Mentors said")
             for a in done_:
                 st.markdown(f"- **You raised:** {a['raised']}  \n  **We did:** {a['action']}")
-        if st.button("Start over (practice)"):
+        if db.get_setting("allow_repeat", "No") == "Yes" and st.button("Start over (practice)"):
             st.session_state.ci = {"phase": "consent"}
             st.session_state.pop("ci_agree", None)
             st.rerun()
@@ -118,7 +133,7 @@ def _question_text_map():
 def page_overview():
     require("leader", "admin")
     st.title("Overview")
-    st.caption("First version: counts and averages. The full dashboard (trends, themes, school-day time, risk tracker) is the next phase.")
+    st.caption("First version: counts and averages. The full dashboard (trends, themes, school-day time, support signals) is the next phase.")
     k = int(db.get_setting("min_group", "5"))
     rows = db.fetch_responses()
     if not rows:
@@ -145,55 +160,10 @@ def page_overview():
                  hide_index=True, width="stretch")
 
 
-# =====================================================================  RESPONSES (admin)
-def page_responses():
-    user = require("admin")
-    st.title("Responses")
-    st.warning("Individual responses are confidential. Use them only to offer support, never to evaluate anyone.")
-    if "resp_logged" not in st.session_state:
-        db.log(user["username"], "viewed individual responses")
-        st.session_state.resp_logged = True
-    rows = db.fetch_responses()
-    if not rows:
-        st.info("No responses yet.")
-        return
-    df = pd.DataFrame(rows)
-    texts = {}
-    for v in sorted(df["question_version"].dropna().unique()):
-        payload = db.get_published_version("questions", int(v)) or []
-        texts[int(v)] = {q["id"]: q["text"] for q in payload}
-    df["Question"] = [texts.get(int(v), {}).get(qid, "") for v, qid in zip(df["question_version"], df["question_id"])]
-    df["Answer"] = df["rating"].fillna("") + df["text_answer"].fillna("") + df["checklist_selected"].fillna("")
-    df["Audio"] = df["audio_note"].fillna("")
-    c1, c2 = st.columns(2)
-    who = c1.selectbox("Mentor code", ["All"] + sorted(df["participant_code"].unique()))
-    qsel = c2.selectbox("Question", ["All"] + sorted(df["question_id"].unique()))
-    if who != "All":
-        df = df[df["participant_code"] == who]
-    if qsel != "All":
-        df = df[df["question_id"] == qsel]
-    st.dataframe(df[["id", "ts", "participant_code", "session_type", "question_id", "Question", "Answer", "Audio", "skipped"]]
-                 .rename(columns={"id": "ID", "ts": "Time (UTC)", "participant_code": "Mentor", "session_type": "Type",
-                                  "question_id": "Q", "skipped": "Skipped"}), hide_index=True, width="stretch")
-    with_audio = df[df["Audio"] == "recorded"]
-    if not with_audio.empty:
-        st.subheader("Recordings")
-        st.caption("Playing a recording is logged. Delete the audio once it has been transcribed.")
-        rid = st.selectbox("Recording", with_audio["id"].tolist(),
-                           format_func=lambda i: f"#{i}  {with_audio[with_audio['id'] == i]['participant_code'].iloc[0]}  {with_audio[with_audio['id'] == i]['question_id'].iloc[0]}")
-        blob = db.get_audio(int(rid))
-        if blob:
-            st.audio(bytes(blob), format="audio/wav")
-            db.log(user["username"], "played audio", f"response {rid}") if st.session_state.get("last_audio") != rid else None
-            st.session_state.last_audio = rid
-            if st.button("Delete this recording"):
-                db.delete_audio(int(rid)); db.log(user["username"], "deleted audio", f"response {rid}")
-                st.session_state.flash = f"Recording #{rid} deleted."; st.rerun()
-
-
 # =====================================================================  QUESTIONS
 def _versions_tab(kind, label):
     hist = db.version_history(kind)
+    ui.section("Version history", "Purpose: see every published version and who made it. How to use: restore an older version as a draft, then review and publish it.", level=3)
     st.dataframe(pd.DataFrame(hist).rename(columns={"version": "Version", "status": "Status", "note": "Note",
                                                     "created_by": "By", "created": "When (UTC)"}), hide_index=True, width="stretch")
     options = [h["version"] for h in hist if h["status"] != "published"]
@@ -253,6 +223,8 @@ def page_questions():
     if user["role"] != "admin":
         st.caption(f"Published version {ver}. Only the program admin can change questions.")
         df = pd.DataFrame(pub)
+        df["wave"] = df["wave"].map(ct.wave_label)
+        ui.section("Questions Mentors are asked", "Purpose: see exactly what Mentors are asked. How to use: Block shows how often a question appears. Only the program admin can edit.", level=3)
         st.dataframe(df[["id", "block", "type", "text", "wave", "active"]].rename(columns={"id": "ID", "block": "Block", "type": "Type", "text": "Question", "wave": "Asked in", "active": "Active"}),
                       hide_index=True, width="stretch")
         return
@@ -283,7 +255,7 @@ def page_questions():
                     st.text_area("Question wording", q["text"], key=k + "text", help="Exactly what the Mentor sees.")
                     c1, c2, c3, c4 = st.columns(4)
                     c1.selectbox("Question type", ct.TYPES, index=ct.TYPES.index(q["type"]), key=k + "type")
-                    c2.selectbox("Asked in", ct.WAVES, index=ct.WAVES.index(q["wave"]), key=k + "wave")
+                    c2.selectbox("Asked in", ct.WAVES, index=ct.WAVES.index(q["wave"]), key=k + "wave", format_func=ct.wave_label)
                     c3.selectbox("Block", ct.BLOCKS, index=ct.BLOCKS.index(q["block"]), key=k + "block")
                     c4.number_input("Order", value=int(q.get("order", 0)), step=10, key=k + "order", help="Lower numbers come first within a block.")
                     st.text_area("Answer options or scale", q["options"], key=k + "options",
@@ -297,7 +269,7 @@ def page_questions():
         with st.expander("Add a new question"):
             nb = st.selectbox("Block", ct.BLOCKS, key="new_block")
             nt = st.selectbox("Question type", ct.TYPES, key="new_type")
-            nw = st.selectbox("Asked in", ct.WAVES, key="new_wave")
+            nw = st.selectbox("Asked in", ct.WAVES, key="new_wave", format_func=ct.wave_label)
             ntext = st.text_area("Question wording", key="new_text")
             nopt = st.text_area("Answer options or scale", key="new_opts")
             if st.button("Add question"):
@@ -352,7 +324,7 @@ def page_questions():
     with t_prev:
         st.caption("See what a Mentor would be asked, using your current edits.")
         c1, c2, c3 = st.columns(3)
-        stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], key="prev_type")
+        stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], key="prev_type", format_func=ct.type_label)
         season_ = c2.selectbox("Season", seasons.SEASONS, index=seasons.number(seasons.parse(seasons.current_label())[0]) - 1, key="prev_q")
         quarter = seasons.number(season_)
         fy = c3.checkbox("First-year Mentor", key="prev_fy")
@@ -392,12 +364,14 @@ def _gather_codebook(work, stamp):
 def page_coding_key():
     user = require("leader", "admin")
     ver, pub = db.get_published("codebook")
-    st.title("Coding key")
+    st.title("Themes and rules")
     st.caption("The themes (indicators) and rules used to tag what Mentors say. The tagging instructions are built from this page.")
     _flash()
     if user["role"] != "admin":
-        st.caption(f"Published version {ver}. Only the program admin can change the coding key.")
+        st.caption(f"Published version {ver}. Only the program admin can change the themes and rules.")
+        ui.section("Themes", "Purpose: the topics Mentors' answers are sorted into. How to use: read the definitions to know what each theme includes.", level=3)
         st.dataframe(pd.DataFrame(pub["themes"])[["id", "name", "definition", "controllability"]], hide_index=True, width="stretch")
+        ui.section("Rules", "Purpose: how answers are tagged consistently. How to use: these rules are given to whoever or whatever tags the answers.", level=3)
         st.dataframe(pd.DataFrame(pub["rules"])[["name", "category", "what"]], hide_index=True, width="stretch")
         return
     if "cwork" not in st.session_state:
@@ -460,8 +434,8 @@ def page_coding_key():
                     st.session_state.flash = "Rule added."
                     st.rerun()
     with t_pr:
-        which = st.radio("Show instructions built from", ["Live coding key", "My current edits"], horizontal=True)
-        text = ct.build_prompt(pub, ver) if which == "Live coding key" else ct.build_prompt(_gather_codebook(work, stamp), f"{ver} + unpublished edits")
+        which = st.radio("Show instructions built from", ["Live themes and rules", "My current edits"], horizontal=True)
+        text = ct.build_prompt(pub, ver) if which == "Live themes and rules" else ct.build_prompt(_gather_codebook(work, stamp), f"{ver} + unpublished edits")
         st.caption(f"About {len(text) // 4:,} words-worth of instructions (roughly {len(text) // 4:,} tokens). These are what the AI tagger is told. They rebuild automatically from this page.")
         st.download_button("Download tagging instructions (.txt)", text, file_name="tagging_instructions.txt")
         st.text_area("Tagging instructions", text, height=360, disabled=True)
@@ -471,8 +445,8 @@ def page_coding_key():
         st.session_state.cwork = _gather_codebook(work, stamp)
         db.save_draft("codebook", st.session_state.cwork, user["username"])
         st.session_state.chasdraft = True
-        db.log(user["username"], "saved coding key draft")
-        st.success("Draft saved. The live coding key is unchanged.")
+        db.log(user["username"], "saved themes and rules draft")
+        st.success("Draft saved. The live themes and rules is unchanged.")
     if b2.button("Discard my changes", key="c_disc"):
         db.discard_draft("codebook"); st.session_state.pop("cwork", None)
         st.session_state.flash = "Draft discarded."; st.rerun()
@@ -488,12 +462,12 @@ def page_coding_key():
         note = st.text_input("What changed and why (shown in the version history)", key="c_note")
         if st.button(f"Publish as version {ver + 1}", disabled=not changes, type="primary", key="c_pub"):
             v = db.publish("codebook", new, user["username"], note)
-            db.log(user["username"], "published coding key", f"version {v}: {note}")
+            db.log(user["username"], "published themes and rules", f"version {v}: {note}")
             st.session_state.pop("cwork", None); st.session_state.pop("c_review", None)
             st.session_state.flash = f"Published version {v}. The tagging instructions now use it."
             st.rerun()
     with t_ver:
-        _versions_tab("codebook", "coding key")
+        _versions_tab("codebook", "themes and rules")
 
 
 # =====================================================================  USERS, SETTINGS, AUDIT, GUIDE
@@ -503,9 +477,10 @@ def page_users():
     _flash()
     st.caption("Add Mentors and staff. Give each Mentor a code and an initial password; ask them to keep it private.")
     us = db.list_users()
+    ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: pick a person below to change their check-in type, first-year status, active status, or password.", level=3)
     st.dataframe(pd.DataFrame(us)[["username", "display_name", "role", "active", "session_type", "first_year"]]
                  .rename(columns={"username": "Sign-in name", "display_name": "Name", "role": "Role", "active": "Active",
-                                  "session_type": "Check-in type", "first_year": "First year"}), hide_index=True, width="stretch")
+                                  "session_type": "Check-in type", "first_year": "First year"}).assign(**{"Check-in type": lambda d: d["Check-in type"].map(ct.type_label)}), hide_index=True, width="stretch")
     with st.expander("Add a person"):
         un = st.text_input("Sign-in name or Mentor code (no spaces)", key="u_name")
         dn = st.text_input("Name shown in the app", key="u_disp")
@@ -520,11 +495,11 @@ def page_users():
                 db.add_user(un.strip(), dn.strip() or un.strip(), rl, pw)
                 db.log(me["username"], "added user", f"{un.strip()} ({rl})")
                 st.session_state.flash = f"Added {un.strip()}."; st.rerun()
-    st.subheader("Change a person")
+    ui.section("Change a person", "Pick a person, change their settings, and save.", level=3)
     sel = st.selectbox("Person", [u["username"] for u in us], key="u_sel")
     u = next(x for x in us if x["username"] == sel)
     c1, c2, c3 = st.columns(3)
-    stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], index=0 if (u["session_type"] or "Quarterly") == "Quarterly" else 1, key=f"st_{sel}")
+    stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], index=0 if (u["session_type"] or "Quarterly") == "Quarterly" else 1, key=f"st_{sel}", format_func=ct.type_label)
     fy = c2.checkbox("First-year Mentor", bool(u["first_year"]), key=f"fy_{sel}")
     act = c3.checkbox("Active", bool(u["active"]), key=f"ac_{sel}")
     newpw = st.text_input("New password (leave blank to keep the current one)", type="password", key=f"pw_{sel}")
@@ -554,13 +529,28 @@ def page_settings():
                                help="Check-ins are stamped with this season, and it picks which rotating questions are asked.")
     season_year = s2.number_input("Year", min_value=2024, max_value=2040, value=int(cur_year), step=1)
     stage = st.selectbox("Program stage", ["Pilot year", "Established"], index=0 if db.get_setting("program_stage", "Pilot year") == "Pilot year" else 1,
-                         help="During the pilot year, leadership lands on the Pilot year page. The Dashboard and Risk tracker become more useful after several seasons.")
+                         help="During the pilot year, leadership lands on the Pilot year page. The Dashboard and Support signals become more useful after several seasons.")
     k = st.number_input("Smallest group shown in reports (privacy)", min_value=2, max_value=50, value=int(db.get_setting("min_group", "5")))
+    ui.section("Check-ins", "Rules for how Mentors take the check-in.", level=3)
+    rep_ = st.selectbox("Can a Mentor take the check-in twice in the same season?", ["No", "Yes (for practice only)"], index=0 if db.get_setting("allow_repeat", "No") != "Yes" else 1,
+                        help="Keep this on No for real use, so nobody answers twice by accident. Turn it on while you test.")
+    ui.section("Recordings and transcription", "Choose how recorded answers become text, and how long recordings are kept. Transcripts are kept either way.", level=3)
+    st.caption("Automatic transcription: " + tr.status_line())
+    auto_t = st.selectbox("Transcribe automatically when a Mentor finishes?", ["No", "Yes"], index=1 if db.get_setting("auto_transcribe", "No") == "Yes" else 0,
+                          help="Needs the transcription service to be set up. If it fails, the answer is saved and the admin can transcribe it on the Answers page.")
+    keep = list(ct.RETENTION)
+    ret = st.selectbox("What happens to recordings?", keep, index=keep.index(db.get_setting("audio_retention", "after_read")) if db.get_setting("audio_retention", "after_read") in keep else 1,
+                       format_func=ct.RETENTION.get, help="The consent text says recordings are deleted after transcription. Pick the rule that matches what you promised Mentors.")
+    with st.expander("How to set up automatic transcription"):
+        st.markdown("1. Create an account with a speech-to-text service and get an API key. The app supports OpenAI's transcription service.\n"
+                    "2. In Streamlit, open **Manage app > Settings > Secrets** and add a line: `OPENAI_API_KEY = \"your key\"`.\n"
+                    "3. Save and reboot. The status above should say Ready.\n\n"
+                    "The service charges per minute of audio. **Recordings are sent to that service, so get Friends of the Children's approval before using real recordings.**")
     consent = st.text_area("Welcome and consent text (Mentors see this first)", db.get_setting("consent_text"), height=260)
     thanks = st.text_area("Thank-you message", db.get_setting("thanks_text"), height=140)
     st.caption("Friends of the Children staff and legal review should approve the consent text before any real use.")
     if st.button("Save settings", type="primary"):
-        for key, val in (("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
+        for key, val in (("allow_repeat", "Yes" if rep_.startswith("Yes") else "No"), ("auto_transcribe", auto_t), ("audio_retention", ret), ("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
             db.set_setting(key, val)
         db.log(me["username"], "changed settings")
         st.session_state.flash = "Settings saved."; st.rerun()
@@ -570,25 +560,29 @@ def page_audit():
     require("admin")
     st.title("Activity log")
     st.caption("Who signed in, viewed individual responses, played recordings, or changed content.")
+    ui.section("What happened and when", "Purpose: an audit trail of sign-ins, answers viewed, and changes. How to use: check here if you need to know who saw or changed something.", level=3)
     st.dataframe(pd.DataFrame(db.recent_log()).rename(columns={"ts": "When (UTC)", "username": "Who", "action": "What", "detail": "Detail"}).drop(columns=["id"], errors="ignore"),
                  hide_index=True, width="stretch")
 
 
 GUIDE = {
     "mentor": """### What this is
-A short check-in about your work. It takes a few minutes. Every question can be skipped.
+A short check-in about your work. The first screen tells you how many questions there are and about how long it takes. Every question can be skipped.
 
 ### How to take it
 1. Read the welcome note and tick the box to start.
 2. Answer each question one at a time. For spoken questions you can record your voice or type.
 3. Press **Next** (or **Skip this question**). Press **Finish** on the last one.
 
+You can complete the check-in once each season. If you try again, the app tells you that you are already done.
+
 If you share a safety concern, a designated person will follow up so you can get help.""",
     "leader": """### What you can do
 - **Pilot year** is the landing page during year one: participation, the first-season baseline, a summary of what Mentors said, and what has been done about it.
 - **Dashboard** shows group results by season: trends and themes. It becomes more useful after several seasons. Groups under the minimum size are hidden.
-- **Risk tracker** shows the share of Mentors with a support signal, and which signals appear most. Individual Mentors are not shown to you.
-- **Questions** and **Coding key** show what is being asked and how answers are tagged. Only the program admin can edit them.
+- **Support signals** shows the share of Mentors whose answers suggest a supportive check-in, and which signals appear most. Individual Mentors are not shown to you.
+- **Questions** and **Themes and rules** show what is being asked and how answers are tagged. Only the program admin can edit them.
+- **My account** lets you change your password.
 
 Use the switch at the top of each page to look at live check-ins or the clearly labeled demo data.""",
     "admin": """### Changing the questions
@@ -597,23 +591,27 @@ Use the switch at the top of each page to look at live check-ins or the clearly 
 3. Core questions show a warning when you change them, because trend lines restart.
 4. Use **Version history** to restore an older version as a draft.
 
-### Changing the coding key
-Open **Coding key** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
+### Changing the themes and rules
+Open **Themes and rules** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
+
+### Answers
+Open **Answers** for everything Mentors said. For each answer: listen and check the transcript, tag its themes, read it, and star standout excerpts for leadership. Automatic transcription and tagging can do much of this for you once they are set up in **Settings**.
 
 ### Pilot year
-During year one, start on **Pilot year**: check that the check-in works (participation, time, skipped questions), read what Mentors said in the **Listening log**, star a few standout excerpts for leadership, and record what you did about each concern under **You said, we did**.
+During year one, start on **Pilot year**: check that the check-in works (participation, time, skipped questions), see what Mentors said, and record what you did about each concern under **You said, we did**.
 
-### Dashboard and Risk tracker
-- **Dashboard** and **Risk tracker** show group results by season. Open a season in **Settings** before Mentors start their check-ins. On the Risk tracker you also see the list of Mentors who might benefit from a supportive check-in, and you can mark when one has been offered.
-- **Change the indicator rules** at the bottom of the Risk tracker. Each rule is a plain statement worth some points, and two cut-offs set High and Medium priority.
-- Use the switch at the top to see live check-ins or the demo data.
+### Dashboard and Support signals
+- **Dashboard** and **Support signals** show group results by season. Open a season in **Settings** before Mentors start their check-ins.
+- On **Support signals** you also see the list of Mentors who might benefit from a supportive check-in, and you can mark when one has been offered.
+- **Change the indicator rules** at the bottom of Support signals. Each rule is a plain statement worth some points, and two cut-offs set High and Medium priority.
 
-### Tagging answers
-Open **Tag answers** to turn spoken answers into themes. Copy the message into a Claude chat that has the tagging instructions, paste Claude's reply back, and save. The **Themes** tab on the Dashboard uses these tags.
+### Getting ready for real Mentors
+Open **Launch checklist** to see what is still needed: approvals, testing, setup, and launch steps. You can also download a backup there.
 
 ### Looking after people and privacy
 - **People**: add Mentors, set exit interviews, reset passwords.
-- **Responses** shows individual answers. Opening it and playing recordings are logged under **Activity log**.
+- **Answers** shows individual answers. Opening it and playing recordings are logged under **Activity log**.
+- **My account** lets you change your own password.
 - Never share individual answers with a Mentor's supervisor. Use them only to offer support.""",
 }
 

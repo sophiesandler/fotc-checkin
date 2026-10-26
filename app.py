@@ -7,7 +7,8 @@ import db
 import ui
 import views
 import dashboard
-import tagging
+import answers
+import launch
 import pilot
 from auth import login_screen
 
@@ -57,22 +58,21 @@ stage = db.get_setting("program_stage", "Pilot year")
 pilot_first = stage == "Pilot year"
 pg_pilot = st.Page(pilot.page_pilot, title="Pilot year", url_path="pilot", default=pilot_first)
 pg_dash = st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=not pilot_first)
-pg_risk = st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk")
+pg_risk = st.Page(dashboard.page_risk, title="Support signals", url_path="support-signals")
+pg_account = st.Page(launch.page_account, title="My account", url_path="my-account")
+pg_guide = st.Page(views.page_guide, title="Guide", url_path="guide")
 head = [pg_pilot, pg_dash, pg_risk] if pilot_first else [pg_dash, pg_risk, pg_pilot]
 PAGES = {
-    "mentor": [st.Page(views.page_checkin, title="Check-in", url_path="checkin", default=True),
-               st.Page(views.page_guide, title="Guide", url_path="guide")],
+    "mentor": [st.Page(views.page_checkin, title="Check-in", url_path="checkin", default=True), pg_account, pg_guide],
     "leader": head + [st.Page(views.page_questions, title="Questions", url_path="questions"),
-                      st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
-                      st.Page(views.page_guide, title="Guide", url_path="guide")],
-    "admin": head + [st.Page(views.page_responses, title="Responses", url_path="responses"),
-                     st.Page(tagging.page_tag_answers, title="Tag answers", url_path="tag-answers"),
+                      st.Page(views.page_coding_key, title="Themes and rules", url_path="themes-and-rules"), pg_account, pg_guide],
+    "admin": head + [st.Page(answers.page_answers, title="Answers", url_path="answers"),
                      st.Page(views.page_questions, title="Questions", url_path="questions"),
-                     st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
+                     st.Page(views.page_coding_key, title="Themes and rules", url_path="themes-and-rules"),
                      st.Page(views.page_users, title="People", url_path="people"),
                      st.Page(views.page_settings, title="Settings", url_path="settings"),
-                     st.Page(views.page_audit, title="Activity log", url_path="activity"),
-                     st.Page(views.page_guide, title="Guide", url_path="guide")],
+                     st.Page(launch.page_launch, title="Launch checklist", url_path="launch-checklist"),
+                     st.Page(views.page_audit, title="Activity log", url_path="activity"), pg_account, pg_guide],
 }
 nav = st.navigation(PAGES[user["role"]])
 with st.sidebar:

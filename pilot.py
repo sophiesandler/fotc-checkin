@@ -160,13 +160,13 @@ def page_pilot():
     med = float(s_sel[s_sel["completed"]]["minutes"].median()) if completed else None
     c4.metric("Typical time", f"{med:.1f} min" if med is not None and (admin or completed >= k) else "n/a", help="Middle time among finished check-ins. It includes time away from the screen.")
 
-    tabs = st.tabs(["Pilot health", "Baseline", "Listening log", "You said, we did", "Pilot feedback", "Readiness"])
+    tabs = st.tabs(["Pilot health", "Baseline", "What Mentors said", "You said, we did", "Pilot feedback", "Readiness"])
     with tabs[0]:
         _health(data, sel, s_sel, started, completed, invited, med, k, admin)
     with tabs[1]:
         _baseline(data, all_seasons, sel, k)
     with tabs[2]:
-        _listening(data, sel, k, admin, user, example)
+        _said(data, sel, k, admin)
     with tabs[3]:
         _actions(data, sel, cur_label, admin, user, example)
     with tabs[4]:
@@ -183,8 +183,7 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
     core_skip = qs[qs["qid"].isin(CORE) & (qs["reached"] >= k)]["rate"].max() if not qs.empty else None
     trust = data["ratings"][(data["ratings"]["season"] == sel) & (data["ratings"]["qid"] == "P03")]["value"]
     trust_m = float(trust.mean()) if len(trust) >= k else None
-    st.subheader("How is the pilot going?")
-    st.caption("Suggested targets. Agree on the real ones with Friends of the Children.")
+    ui.section("How is the pilot going?", "Purpose: check whether the check-in is working. How to use: look for orange rows, which are goals not yet met. These targets are suggestions to agree with Friends of the Children.")
     rows = []
     def judge(value, ok, label, shown):
         rows.append({"Goal": label, "Now": shown, "Status": "Not enough data" if value is None else ("Met" if ok else "Not yet")})
@@ -197,7 +196,7 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
     st.dataframe(goals.style.map(lambda x: {"Met": "background-color:#D6EFD9;color:#1B5E20;font-weight:700", "Not yet": "background-color:#FFD9A0;color:#282828;font-weight:700"}.get(x, ""), subset=["Status"]),
                  hide_index=True, width="stretch")
 
-    st.subheader("Who took part")
+    ui.section("Who took part", "Purpose: see how many Mentors were invited, started, and finished. How to use: a big drop between steps shows where to follow up.")
     if not (admin or started >= k):
         st.info(f"Fewer than {k} Mentors started a check-in this season, so the details are hidden to protect privacy.")
     else:
@@ -209,7 +208,7 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
             audio_n, typed_n = int(sp["audio"].sum()), int((~sp["audio"]).sum())
             st.caption(f"Spoken questions: {audio_n} answered by recording and {typed_n} by typing.")
 
-    st.subheader("Questions that may need a new look")
+    ui.section("Questions that may need a new look", "Purpose: find questions many Mentors skip. How to use: reword flagged questions on the Questions page. Optional questions are not flagged.")
     if qs.empty:
         st.info("No answers yet this season.")
         return
@@ -225,9 +224,10 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
         tbl = pd.DataFrame({"ID": qs["qid"], "Question": qs["qid"].map(lambda q: data["qtext"].get(q, "")), "Mentors who reached it": qs["reached"],
                             "Skipped": qs["rate"].fillna(0), "Optional": qs["optional"].map({True: "optional", False: ""})})
         with st.expander("All questions"):
+            st.caption("Every question this season, with how many Mentors reached it and how many skipped it.")
             st.dataframe(tbl, hide_index=True, width="stretch", column_config={"Skipped": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
         stopped = s_sel[~s_sel["completed"]]
-        st.subheader("Where people stopped")
+        ui.section("Where people stopped", "Purpose: find where unfinished check-ins ended. How to use: a spike at one question number suggests that question, or the overall length, is a problem.")
         if stopped.empty:
             st.caption("Everyone who started has finished.")
         else:
@@ -239,8 +239,7 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
 
 
 def _baseline(data, all_seasons, sel, k):
-    st.subheader("Your starting line")
-    st.markdown("The first season sets a baseline. Next season, the Dashboard will show arrows up or down against it. Until then, read these as a snapshot, not a trend.")
+    ui.section("Your starting line", "Purpose: record where things stand before anything changes. How to use: this season is the baseline. Next season the Dashboard shows arrows against it.")
     if sel != all_seasons[0]:
         st.caption(f"The baseline season is {all_seasons[0]}. You are looking at {sel}.")
     r = data["ratings"][(data["ratings"]["season"] == sel) & data["ratings"]["qid"].isin(CORE)]
@@ -253,11 +252,13 @@ def _baseline(data, all_seasons, sel, k):
         rows.append({"Area": dash.LONG[c], "Answers": str(len(s_)), "Average (1 to 5)": round(float(s_.mean()), 1), "Rated 4 or 5": float((s_ >= 4).mean()), "Rated 1 or 2": float((s_ <= 2).mean())})
         for score in range(1, 6):
             mix.append({"Area": SHORT[c], "Score": str(score), "Share": float((s_ == score).mean())})
+    ui.section("Average answers this season", "How many Mentors answered, the average, and the share who rated each area high (4 or 5) or low (1 or 2).", level=3)
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
                  column_config={"Average (1 to 5)": st.column_config.NumberColumn(format="%.1f"),
                                 "Rated 4 or 5": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent"),
                                 "Rated 1 or 2": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
     if mix:
+        ui.section("How answers were spread", "The whole range of answers for each area. Orange segments are low scores and blue segments are high scores.", level=3)
         dash.plot(alt.Chart(pd.DataFrame(mix)).mark_bar().encode(
             x=alt.X("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"), y=alt.Y("Area:N", sort=[SHORT[c] for c in CORE], title=None),
             color=alt.Color("Score:N", scale=alt.Scale(domain=["1", "2", "3", "4", "5"], range=[ui.SCALE[i] for i in range(1, 6)]),
@@ -266,68 +267,32 @@ def _baseline(data, all_seasons, sel, k):
         st.info(f"Each area needs at least {k} answers to be shown.")
 
 
-def _listening(data, sel, k, admin, user, example):
+def _said(data, sel, k, admin):
     a = data["answers"][data["answers"]["season"] == sel].copy()
+    ui.section("What Mentors said", "A summary of the spoken answers this season, with excerpts the admin chose for leadership. Names are removed. "
+               + ("To read, tag, and star individual answers, open the Answers page." if admin else "The program admin reads every answer and chooses which excerpts to share."))
     if a.empty:
         st.info("No spoken answers this season yet.")
         return
-    st.subheader("Listening log")
-    enough = a["mentor"].nunique() >= k
-    if not admin:
-        st.caption("A summary of what Mentors said. The program admin reads every answer and chooses the excerpts shown here, with names removed.")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Spoken answers", len(a) if enough else f"under {k}")
-        m2.metric("Read by the admin", f"{a['reviewed'].mean() * 100:.0f}%" if enough else f"under {k}")
-        m3.metric("Standout excerpts", int(a["starred"].sum()) if enough else f"under {k}")
-        if not enough:
-            st.info(f"Fewer than {k} Mentors have spoken answers this season, so excerpts are hidden to protect privacy.")
-            return
-        st.subheader("Standout excerpts")
-        stars = a[a["starred"] & ~a["escalated"]]
-        if stars.empty:
-            st.caption("No excerpts have been chosen yet.")
-        for _, r in stars.iterrows():
-            body = (r["excerpt"] or r["text"])[:400]
-            st.markdown(f"> “{body}”  \n> <span style='color:#555'>{r['season']}</span>", unsafe_allow_html=True)
+    enough = admin or a["mentor"].nunique() >= k
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Spoken answers", len(a) if enough else f"under {k}")
+    m2.metric("Read by the admin", f"{a['read' if 'read' in a else 'reviewed'].mean() * 100:.0f}%" if enough else f"under {k}")
+    m3.metric("Standout excerpts", int(a["starred"].sum()) if enough else f"under {k}")
+    if not enough:
+        st.info(f"Fewer than {k} Mentors have spoken answers this season, so excerpts are hidden to protect privacy.")
         return
-
-    st.warning("Read before you star: remove names and any detail that could identify a Mentor or a youth. Starred excerpts are shown to leadership without names.")
-    c1, c2 = st.columns(2)
-    qf = c1.selectbox("Question", ["All"] + sorted(a["qid"].unique()), key="ll_q")
-    stf = c2.selectbox("Show", ["All", "Not yet read", "Read", "Starred"], key="ll_s")
-    v = a if qf == "All" else a[a["qid"] == qf]
-    v = {"All": v, "Not yet read": v[~v["reviewed"]], "Read": v[v["reviewed"]], "Starred": v[v["starred"]]}[stf]
-    tbl = pd.DataFrame({"ID": v["id"], "Mentor": v["mentor"], "Question": v["qid"], "Answer": v["text"], "Themes": v["themes"],
-                        "Read": v["reviewed"].map({True: "yes", False: ""}), "Starred": v["starred"].map({True: "★", False: ""})})
-    st.dataframe(tbl, hide_index=True, width="stretch", column_config={"Answer": st.column_config.TextColumn(width="large")})
-    if v.empty:
-        return
-    pick = st.selectbox("Open an answer", v["id"].tolist(), format_func=lambda i: f"#{i}  {v[v['id'] == i]['mentor'].iloc[0]}  {v[v['id'] == i]['qid'].iloc[0]}", key="ll_pick")
-    r = v[v["id"] == pick].iloc[0]
-    st.markdown(f"**Question:** {r['qtext']}")
-    st.markdown(f"**Answer:** {r['text']}")
-    if r["escalated"]:
-        st.error("This answer raised a safety or welfare flag. Follow Friends of the Children's procedure. It cannot be starred and stays out of the dashboard.")
-        return
-    excerpt = st.text_area("Excerpt for leadership (edit to trim or remove identifying details)", value=r["excerpt"] or r["text"], key=f"ex_{pick}", height=110)
-    cr, cs = st.columns(2)
-    reviewed = cr.checkbox("I have read this answer", value=bool(r["reviewed"]), key=f"rv_{pick}")
-    starred = cs.checkbox("Star as a standout excerpt", value=bool(r["starred"]), key=f"sr_{pick}")
-    if st.button("Save", key=f"sv_{pick}", disabled=example):
-        db.upsert_review(int(pick), user["username"], reviewed or starred, starred, excerpt.strip())
-        db.log(user["username"], "reviewed an answer", f"response {pick}, starred={starred}")
-        st.session_state.flash = "Saved."
-        st.rerun()
-    if example:
-        st.caption("Saving is turned off in the example data.")
-    msg = st.session_state.pop("flash", None)
-    if msg:
-        st.success(msg)
+    ui.section("Standout excerpts", "Quotes the admin chose to share. Use them to put a human voice next to the numbers.", level=3)
+    stars = a[a["starred"] & ~a["escalated"]]
+    if stars.empty:
+        st.caption("No excerpts have been chosen yet.")
+    for _, r in stars.iterrows():
+        body = (r["excerpt"] or r["text"])[:400]
+        st.markdown(f"> “{body}”  \n> <span style='color:#555'>{r['season']}</span>", unsafe_allow_html=True)
 
 
 def _actions(data, sel, cur_label, admin, user, example):
-    st.subheader("You said, we did")
-    st.markdown("Mentors give time and honesty. This list shows them, and leadership, what was done about what they raised. Finished items appear on the thank-you screen after each check-in.")
+    ui.section("You said, we did", "Purpose: show Mentors and leadership what was done about what they raised. How to use: add an item when you act on a concern, update its status as it moves, and record whether it helped. Finished items appear on the Mentor thank-you screen.")
     acts = data["actions"].copy()
     if acts.empty:
         st.info("Nothing logged yet." + (" Add the first item below." if admin else ""))
@@ -374,7 +339,7 @@ def _actions(data, sel, cur_label, admin, user, example):
 
 
 def _feedback(data, sel, k, admin, user, example):
-    st.subheader("Feedback on the check-in itself")
+    ui.section("Feedback on the check-in itself", "Purpose: learn whether Mentors find the check-in easy and trustworthy. How to use: bars past the dashed line meet the target. Orange bars do not.")
     have = {q["id"] for q in db.get_published("questions")[1]}
     if not set(FEEDBACK) <= have:
         if admin:
@@ -411,12 +376,11 @@ def _feedback(data, sel, k, admin, user, example):
     else:
         st.info(f"Each statement needs at least {k} answers to be shown.")
     if admin:
-        st.caption("Read comments about the check-in in the Listening log by choosing question P04.")
+        st.caption("Read comments about the check-in on the Answers page by choosing question P04.")
 
 
 def _readiness(data, all_seasons, k):
-    st.subheader("What the data can support yet")
-    st.markdown("Charts only mean something once there is enough behind them. This shows what you can rely on now and what to wait for.")
+    ui.section("What the data can support yet", "Purpose: show what you can rely on now and what to wait for. How to use: Ready means enough data; Building means partly there; Later means not yet. Share this table when someone asks why a chart is empty.")
     sess = data["sessions"]
     per = {s: int(sess[(sess["season"] == s) & sess["completed"] & (sess["session_type"] == "Quarterly")]["mentor"].nunique()) for s in all_seasons}
     ok_seasons = sum(1 for n in per.values() if n >= k)

@@ -1,4 +1,4 @@
-"""Phase 3: Dashboard and Risk tracker pages. Works on live check-ins or on clearly labeled demo data."""
+"""Phase 3: Dashboard and Support signals pages. Works on live check-ins or on clearly labeled demo data."""
 import json
 import os
 
@@ -179,7 +179,7 @@ def page_dashboard():
               delta=(f"{dlt:+.1f}" if dlt is not None and abs(dlt) >= 0.05 else None))
     flagged = (cur["band"] != "Low").sum()
     m3.metric("With a support signal", f"{flagged / len(cur) * 100:.0f}%" if len(cur) >= k else f"under {k}",
-              help="Mentors whose answers match the indicator rules set on the Risk tracker page. It is a prompt to offer support, not a judgment.")
+              help="Mentors whose answers match the indicator rules set on the Support signals page. It is a prompt to offer support, not a judgment.")
     if cur["left_next"].notna().any():
         left = int(cur["left_next"].sum())
         m4.metric("Left before next season", left if left >= k else f"under {k}")
@@ -199,7 +199,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
     ABBR = {"Winter": "Win", "Spring": "Spr", "Summer": "Sum", "Fall": "Fall"}
     short = lambda lbl: f"{ABBR[seasons.parse(lbl)[0]]} {str(seasons.parse(lbl)[1])[-2:]}"
     heads = [short(w) for w in waves]
-    NEAR = 0.15      # a fall this big counts toward the 'At risk?' rules
+    NEAR = 0.15      # a fall this big counts toward the 'Needs attention?' rules
     ARROW = 0.05     # a change this big gets an arrow
     cur_v = v[v["wave"] == sel]
 
@@ -248,7 +248,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
             else:
                 row[heads[i]] = f"– {m:.1f}"
         flag, why = verdict(item)
-        row["At risk?"] = flag
+        row["Needs attention?"] = flag
         if flag in ("Yes", "Watch"):
             flagged.append((LONG[item], flag, why))
         table_rows.append(row)
@@ -266,8 +266,8 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
         return {"Yes": "background-color:#C62828;color:white;font-weight:700", "Watch": "background-color:#FFD9A0;color:#282828;font-weight:700",
                 "No": "background-color:#D6EFD9;color:#1B5E20;font-weight:700"}.get(x, "")
 
-    st.subheader("Season by season")
-    styled = sc.style.map(arrow_color, subset=heads).map(risk_color, subset=["At risk?"])
+    ui.section("Season by season scorecard", "Purpose: see how each area is doing and which way it is moving. How to use: read across a row to follow one area through the seasons, check the arrow for the change since the season before, and look at the last column for areas that need attention.")
+    styled = sc.style.map(arrow_color, subset=heads).map(risk_color, subset=["Needs attention?"])
     if short(sel) in heads:
         styled = styled.set_properties(subset=[short(sel)], **{"background-color": "#EEF5FB"})
     st.dataframe(styled, hide_index=True, width="stretch", height=int(35.5 * (len(sc) + 1)))
@@ -278,7 +278,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
         "<span style='color:#555;font-weight:700'>–</span> means about the same (within 0.05). The first season has no arrow, and a dash means fewer than "
         f"{k} answers. The shaded column is the season you picked.", unsafe_allow_html=True)
     st.markdown(
-        "**At risk?** &nbsp;**Yes**: the average is below 3.0, 1 in 4 Mentors rated it low (1 or 2), or it fell two seasons in a row. &nbsp;"
+        "**Needs attention?** &nbsp;**Yes**: the average is below 3.0, 1 in 4 Mentors rated it low (1 or 2), or it fell two seasons in a row. &nbsp;"
         "**Watch**: it fell this season, 15% or more rated it low, or the average is below 3.3. &nbsp;**No**: none of these.")
     if flagged:
         st.caption("Flagged in " + sel + ": " + " | ".join(f"{n} ({f.lower()}: {w})" for n, f, w in flagged))
@@ -286,7 +286,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
     # ---- biggest movers and same season last year
     left_, right_ = st.columns(2)
     with left_:
-        st.subheader("Biggest movers")
+        ui.section("Biggest movers since last season", "Purpose: spot which areas changed most. How to use: start with the longest bars. Blue bars rose and orange bars fell.")
         if prev_label is None:
             st.info("This is the first season, so there is nothing to compare with.")
         else:
@@ -302,7 +302,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
                 plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.2f")), 300)
                 st.caption(f"{prev_label} to {sel}. Blue means higher, orange means lower.")
     with right_:
-        st.subheader("Same season, last year")
+        ui.section("Same season, last year", "Purpose: compare with the same season a year ago, so summer is compared with summer. How to use: a long line between the grey dot (last year) and the blue dot (this year) is a big change.")
         ly = seasons.same_last_year(sel)
         if ly not in waves:
             st.info(f"There are no check-ins from {ly} to compare with yet.")
@@ -325,7 +325,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
                 st.info("Not enough answers in both seasons to compare.")
 
     # ---- heatmap: area by season
-    st.subheader("Averages by season")
+    ui.section("Averages by season", "Purpose: see every area in every season on one page. How to use: look across a row for an area that stays orange (a lasting concern), and down a column for a season that was hard for everyone.")
     recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in CORE for i, w in enumerate(waves) if means[item][i] is not None]
     hm = pd.DataFrame(recs)
     if not hm.empty:
@@ -338,7 +338,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
         st.caption("Blue is higher, orange is lower, grey is in the middle. Colors compare areas and seasons with each other, so a small color change is a small difference.")
 
     # ---- heatmap: time as a Mentor by season
-    st.subheader("By time as a Mentor")
+    ui.section("Answers by time as a Mentor", "Purpose: check whether newer and longer-serving Mentors feel differently. How to use: pick an area, then compare the rows. A gap between first-year and later Mentors may point to onboarding or experience.")
     if not has_tb:
         st.info("Live check-ins do not record how long each Mentor has been in the role yet, so this view uses the demo data.")
     else:
@@ -361,6 +361,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
 
     # ---- more detail, tucked away
     with st.expander("Compare areas over time"):
+        st.caption("Purpose: follow a few areas on one chart. How to use: choose the areas, then follow each line across the seasons.")
         picks = st.multiselect("Areas to compare", LONG_ORDER, default=[LONG["C01"], LONG["C02"], LONG["C03"]], key="cmp_areas")
         recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in CORE for i, w in enumerate(waves)
                 if means[item][i] is not None and LONG[item] in picks]
@@ -371,6 +372,7 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
         else:
             st.info("Pick at least one area.")
     with st.expander(f"How answers were spread in {sel}"):
+        st.caption("Purpose: see the whole range of answers, not just the average. How to use: a large orange segment means many Mentors rated that area low.")
         cur_ = v[v["wave"] == sel]
         mix = []
         for item in CORE:
@@ -390,7 +392,7 @@ def _themes(source, v, waves, sel, k):
     names = {t["id"]: t["name"] for t in db.get_published("codebook")[1]["themes"]}
     tg = demo_tags() if source == "demo" else live_tags()
     if tg.empty:
-        st.info("No tagged answers yet. Spoken answers become themes once they are transcribed and tagged. The program admin does this on the **Tag answers** page. "
+        st.info("No tagged answers yet. Spoken answers become themes once they are transcribed and tagged. The program admin does this on the **Answers** page. "
                 "Switch to the demo data above to see how this tab will look.")
     else:
         if source == "demo":
@@ -416,7 +418,7 @@ def _themes(source, v, waves, sel, k):
                 n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
                 if den.get(w, 0) >= k and n_ >= k:
                     recs.append({"Season": w, "Theme": THEME_SHORT.get(t_, nm), "Share": n_ / den[w], "Mentors": int(n_), "Bucket": bucket(n_ / den[w])})
-        st.subheader("Share of Mentors mentioning each theme")
+        ui.section("Share of Mentors mentioning each theme", "Purpose: see which themes come up most and whether they are growing. How to use: darker boxes mean more Mentors mentioned the theme. The key below the chart explains the colors.")
         what = "was hard" if val == "Negative" else "is working"
         st.markdown(f"Each box shows the share of Mentors who said something about this theme when asked what {what} for them that season. "
                     f"**The darker the box, the more Mentors mentioned it.** The key under the chart shows what each color means. "
@@ -437,7 +439,7 @@ def _themes(source, v, waves, sel, k):
         else:
             st.info(f"No theme was mentioned by {k} or more Mentors yet.")
 
-        st.subheader("Concerns growing or shrinking?" if val == "Negative" else "Strengths growing or shrinking?")
+        ui.section("Concerns growing or shrinking?" if val == "Negative" else "Strengths growing or shrinking?", "Purpose: see which themes are rising or falling since last season. How to use: bars to the right mean more Mentors mentioned the theme. Blue is good news and orange is a worry.")
         wi = tw.index(sel) if sel in tw else None
         if wi is None or wi == 0:
             st.info("This compares a season with the one before it, so it needs at least two seasons of tagged answers.")
@@ -468,7 +470,7 @@ def _themes(source, v, waves, sel, k):
             else:
                 st.info("Not enough answers in both seasons to compare themes.")
 
-        st.subheader("In their words")
+        ui.section("In their words", "Purpose: put real voices next to the numbers. How to use: pick a theme and a season to read excerpts from Mentors' answers.")
         qs = sub[(sub["quote"] != "") & (sub["aggregate_only"].astype(int) == 0)]
         c1, c2 = st.columns(2)
         tl = [t_ for t_ in names if t_ != "T10" and (qs["theme"] == t_).any()]
@@ -490,7 +492,7 @@ def _themes(source, v, waves, sel, k):
                     st.markdown(f"> “{row['quote']}”  \n> <span style='color:#555'>{row['wave']}{more}</span>", unsafe_allow_html=True)
             st.caption("Excerpts are copied exactly from answers. Names are never shown. Anything that raised a safety concern is handled by a person outside the dashboard.")
 
-    st.subheader("Why people left")
+    ui.section("Why people left", "Purpose: learn the main reasons Mentors chose to leave. How to use: look for reasons the program could change, then record what you do about them on the Pilot year page under You said, we did.")
     if source == "demo":
         ex = demo_exits()["top_reason"].map(lambda t_: names.get(t_, t_)).value_counts()
         st.caption(f"Main reason chosen by the {int(ex.sum())} Mentors who completed an exit interview.")
@@ -509,7 +511,7 @@ def _themes(source, v, waves, sel, k):
         st.caption(f"{int((ex < k).sum())} other reason(s) with fewer than {k} answers are hidden.")
 
 
-# ---------------------------------------------------------------- risk tracker
+# ---------------------------------------------------------------- support signals
 def _rule_editor(rules, bands, user):
     stamp = st.session_state.setdefault("rstamp", 0)
     work = st.session_state.setdefault("rwork", [dict(r) for r in rules])
@@ -580,7 +582,7 @@ def _gather_rules(work, stamp):
 def page_risk():
     user = require("leader", "admin")
     k = _k()
-    st.title("Risk tracker")
+    st.title("Support signals")
     stage_note()
     msg = st.session_state.pop("flash", None)
     if msg:
@@ -597,7 +599,7 @@ def page_risk():
     cur = ev[ev["wave"] == sel]
     n = len(cur)
 
-    st.subheader("Across the whole group")
+    ui.section("Across the whole group", "Purpose: see how many Mentors may benefit from a supportive check-in. How to use: use the counts to plan support. These are signals to offer help, not judgments about people.")
     if n < k:
         st.info(f"Fewer than {k} Mentors have a check-in in {sel}, so group results are hidden.")
     else:
@@ -614,7 +616,7 @@ def page_risk():
         t = pd.DataFrame(trend).dropna()
         d1, d2 = st.columns(2)
         with d1:
-            st.markdown(f"**Priority mix in {sel}**")
+            ui.section(f"Priority mix in {sel}", "The share of Mentors in each priority group this season.", level=3)
             dn = pd.DataFrame({"Priority": ["High", "Medium", "Low"], "Mentors": [int(counts.get(b, 0)) for b in ("High", "Medium", "Low")]})
             dn = dn[dn["Mentors"] >= k]
             arc = alt.Chart(dn).mark_arc(innerRadius=70, stroke="white", strokeWidth=3).encode(
@@ -622,7 +624,7 @@ def page_risk():
                                                               legend=alt.Legend(orient="bottom", direction="horizontal")))
             plot(arc, 280)
         with d2:
-            st.markdown("**Priority mix by season**")
+            ui.section("Priority mix by season", "Is the group needing attention growing or shrinking?", level=3)
             rows_ = []
             for w in waves:
                 sw = ev[ev["wave"] == w]
@@ -640,13 +642,13 @@ def page_risk():
                 st.caption(f"Groups with fewer than {k} Mentors are left out.")
         l, r_ = st.columns(2)
         with l:
-            st.markdown("**Share of Mentors with a signal, by season**")
+            ui.section("Share of Mentors with a signal, by season", "The line shows the percentage with a High or Medium signal each season.", level=3)
             if len(t):
                 plot(alt.Chart(t).mark_line(point=alt.OverlayMarkDef(size=70), color=ORANGE_, strokeWidth=3).encode(
                     x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0)),
                     y=alt.Y("Share with a signal:Q", axis=alt.Axis(format="%"), scale=alt.Scale(domain=[0, max(0.5, float(t["Share with a signal"].max()) + 0.05)]), title=None)), 280)
         with r_:
-            st.markdown(f"**Which signals show up most in {sel}**")
+            ui.section(f"Which signals show up most in {sel}", "Which indicator rules are triggered most often. Use it to decide what to work on as a team.", level=3)
             names = {x["id"]: x["name"] for x in rules}
             cnt = pd.Series([h for hs in cur["hit_ids"] for h in hs], dtype="object").map(names).value_counts()
             cnt = cnt[cnt >= k]
@@ -659,7 +661,7 @@ def page_risk():
 
     if source == "demo":
         lab = ev[ev["left_next"].notna()]
-        st.subheader("How well do these rules work in the demo data?")
+        ui.section("How well do these rules work in the demo data?", "Purpose: show how the rules would have performed. How to use: compare each bar with the dashed line (the overall rate). A bar above the line means that group was more likely to leave. Demo data only.")
         rows = []
         for b in ("High", "Medium", "Low"):
             s = lab[lab["band"] == b]
@@ -688,7 +690,7 @@ def page_risk():
         return
 
     st.divider()
-    st.subheader("Mentors who might benefit from a check-in")
+    ui.section("Mentors who might benefit from a check-in", "Purpose: help the program admin decide who to reach out to. How to use: start with High priority, read what stands out, offer a conversation, then mark it as offered.")
     st.warning("For the program admin only. Do not share this list with supervisors. Use it to offer support, such as a conversation about portfolio size or supervision, never to evaluate anyone.")
     flag = f"viewed_{source}"
     if not st.session_state.get(flag):
