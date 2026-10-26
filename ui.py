@@ -80,6 +80,14 @@ div[data-baseweb="tab-border"] {{ background:#D9D9D9; }}
 blockquote {{ border-left:6px solid {BLUE}; padding:.2rem 1rem; color:{CHARCOAL}; background:{BLUE_TINT}; }}
 blockquote p {{ color:{CHARCOAL}; font-size:1.05rem; }}
 
+/* home screen */
+.home-head {{ font-family:{FONT_COND}; text-transform:uppercase; letter-spacing:.04em; font-weight:700; font-size:1.35rem; color:{CHARCOAL}; margin:1.6rem 0 .5rem 0; border-bottom:3px solid {BLUE}; padding-bottom:4px; }}
+.home-head span {{ font-family:{FONT}; text-transform:none; letter-spacing:0; font-weight:400; font-size:.95rem; color:{GREY}; margin-left:14px; }}
+.home-icon {{ font-size:2rem; line-height:1; margin-bottom:2px; }}
+.home-name {{ font-family:{FONT_COND}; text-transform:uppercase; letter-spacing:.03em; font-weight:700; font-size:1.2rem; color:{CHARCOAL}; }}
+.home-desc {{ color:{GREY}; font-size:.95rem; margin:2px 0 6px 0; }}
+.home-icon.later, .home-name.later, .home-desc.later {{ opacity:.45; }}
+
 /* login hero */
 .hero {{ position:relative; min-height:430px; background:{BLUE}; clip-path:polygon(14% 0, 100% 0, 100% 100%, 0 100%); display:flex; align-items:flex-end; justify-content:flex-end; padding:0; }}
 .hero .stat {{ background:{NAVY}; color:#FFFFFF; padding:22px 30px; margin:0 0 0 0; min-width:62%; }}

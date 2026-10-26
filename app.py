@@ -10,6 +10,7 @@ import dashboard
 import answers
 import launch
 import pilot
+import home
 from auth import login_screen
 
 
@@ -55,26 +56,49 @@ if not user:
     st.stop()
 
 stage = db.get_setting("program_stage", "Pilot year")
-pilot_first = stage == "Pilot year"
-pg_pilot = st.Page(pilot.page_pilot, title="Pilot year", url_path="pilot", default=pilot_first)
-pg_dash = st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=not pilot_first)
-pg_risk = st.Page(dashboard.page_risk, title="Support signals", url_path="support-signals")
-pg_account = st.Page(launch.page_account, title="My account", url_path="my-account")
-pg_guide = st.Page(views.page_guide, title="Guide", url_path="guide")
-head = [pg_pilot, pg_dash, pg_risk] if pilot_first else [pg_dash, pg_risk, pg_pilot]
-PAGES = {
-    "mentor": [st.Page(views.page_checkin, title="Check-in", url_path="checkin", default=True), pg_account, pg_guide],
-    "leader": head + [st.Page(views.page_questions, title="Questions", url_path="questions"),
-                      st.Page(views.page_coding_key, title="Themes and rules", url_path="themes-and-rules"), pg_account, pg_guide],
-    "admin": head + [st.Page(answers.page_answers, title="Answers", url_path="answers"),
-                     st.Page(views.page_questions, title="Questions", url_path="questions"),
-                     st.Page(views.page_coding_key, title="Themes and rules", url_path="themes-and-rules"),
-                     st.Page(views.page_users, title="People", url_path="people"),
-                     st.Page(views.page_settings, title="Settings", url_path="settings"),
-                     st.Page(launch.page_launch, title="Launch checklist", url_path="launch-checklist"),
-                     st.Page(views.page_audit, title="Activity log", url_path="activity"), pg_account, pg_guide],
+role = user["role"]
+
+
+def _page(fn, title, path):
+    return st.Page(fn, title=title, url_path=path)
+
+
+# every page, keyed so the Home screen can link to it
+P = {
+    "pilot": _page(pilot.page_pilot, "Pilot year", "pilot"),
+    "dashboard": _page(dashboard.page_dashboard, "Dashboard", "dashboard"),
+    "risk": _page(dashboard.page_risk, "Support signals", "support-signals"),
+    "answers": _page(answers.page_answers, "Answers", "answers"),
+    "questions": _page(views.page_questions, "Questions", "questions"),
+    "users": _page(views.page_users, "People", "people"),
+    "audit": _page(views.page_audit, "Activity log", "activity"),
+    "guide": _page(views.page_guide, "Guide", "guide"),
+    "launch": _page(launch.page_launch, "Launch checklist", "launch-checklist"),
+    "themes": _page(views.page_coding_key, "Themes and rules", "themes-and-rules"),
+    "account": _page(launch.page_account, "My account", "my-account"),
+    "settings": _page(views.page_settings, "Settings", "settings"),
 }
-nav = st.navigation(PAGES[user["role"]])
+
+if role == "mentor":
+    PAGES = [st.Page(views.page_checkin, title="Check-in", url_path="checkin", default=True), P["account"], P["guide"]]
+else:
+    # pages this person can open (Home links only to these)
+    allowed = {"leader": ["pilot", "dashboard", "risk", "questions", "guide", "themes", "account"],
+               "admin": list(P)}[role]
+    mine = {k: P[k] for k in allowed}
+
+    def _home():
+        home.page_home(mine, role)
+
+    pg_home = st.Page(_home, title="Home", url_path="home", default=True, icon=":material/home:")
+    PAGES = {
+        "": [pg_home],
+        "See how it's going": [mine[k] for k in ("pilot", "dashboard", "risk", "answers") if k in mine],
+        "Edit the tool": [mine[k] for k in ("questions", "users", "audit") if k in mine],
+        "Supporting materials": [mine[k] for k in ("guide", "launch", "themes") if k in mine],
+        "My account": [mine[k] for k in ("account", "settings") if k in mine],
+    }
+nav = st.navigation(PAGES)
 with st.sidebar:
     ui.sidebar_brand()
     st.caption(f"Signed in as **{user['display_name']}**")

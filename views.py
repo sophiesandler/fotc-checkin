@@ -529,7 +529,7 @@ def page_settings():
                                help="Check-ins are stamped with this season, and it picks which rotating questions are asked.")
     season_year = s2.number_input("Year", min_value=2024, max_value=2040, value=int(cur_year), step=1)
     stage = st.selectbox("Program stage", ["Pilot year", "Established"], index=0 if db.get_setting("program_stage", "Pilot year") == "Pilot year" else 1,
-                         help="During the pilot year, leadership lands on the Pilot year page. The Dashboard and Support signals become more useful after several seasons.")
+                         help="During the pilot year, the Home screen shows the Dashboard and Support signals as \"Available after the first season\" (with a preview link). Switch to Established to show them as normal cards.")
     k = st.number_input("Smallest group shown in reports (privacy)", min_value=2, max_value=50, value=int(db.get_setting("min_group", "5")))
     ui.section("Check-ins", "Rules for how Mentors take the check-in.", level=3)
     rep_ = st.selectbox("Can a Mentor take the check-in twice in the same season?", ["No", "Yes (for practice only)"], index=0 if db.get_setting("allow_repeat", "No") != "Yes" else 1,
