@@ -24,8 +24,12 @@ LONG = {"C01": "Likely to still be a Mentor in a year", "C02": "Workload feels s
 TB = ["First year", "1 to 3 years", "3+ years"]
 SOURCES = ["Live check-ins", "Demo data (synthetic)"]
 LONG_ORDER = list(LONG.values())
-SHORT = risk.LABEL
+SHORT = {"C01": "Intent to stay", "C02": "Workload", "C03": "Supervisor support", "C04": "Role clarity", "C05": "Time when youth are away",
+         "C06": "Emotional support", "C07": "Mission connection"}
 SHORT_ORDER = [SHORT[c] for c in CORE]
+THEME_SHORT = {"T01": "Time when youth are away", "T02": "Portfolio and workload", "T03": "Hours and boundaries", "T04": "Supervisor and program team",
+               "T05": "Role clarity", "T06": "Training and onboarding", "T07": "Pay and career growth", "T08": "Youth and family challenges",
+               "T09": "Mission and model fit", "T11": "Team culture and belonging", "T99": "Something else"}
 
 
 def plot(chart, height=None):
@@ -113,6 +117,11 @@ def pick_source():
     return "live", live
 
 
+def stage_note():
+    if db.get_setting("program_stage", "Pilot year") == "Pilot year":
+        st.info("Pilot year: this view becomes more useful after several seasons of check-ins. Start with the **Pilot year** page.")
+
+
 def mean_k(s, k):
     s = s.dropna()
     return float(s.mean()) if len(s) >= k else None
@@ -134,6 +143,7 @@ def page_dashboard():
     user = require("leader", "admin")
     k = _k()
     st.title("Dashboard")
+    stage_note()
     st.caption(f"Group results by season. Groups smaller than {k} are hidden to protect privacy.")
     source, data = pick_source()
     if data.empty:
@@ -184,28 +194,94 @@ def page_dashboard():
 
 
 def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
-    # ---- the season at a glance
-    rows = []
+    # ---- season-by-season scorecard: arrows show the change since the season before
     means = {item: [mean_k(v[v["wave"] == w][item], k) for w in waves] for item in CORE}
-    for item in CORE:
+    ABBR = {"Winter": "Win", "Spring": "Spr", "Summer": "Sum", "Fall": "Fall"}
+    short = lambda lbl: f"{ABBR[seasons.parse(lbl)[0]]} {str(seasons.parse(lbl)[1])[-2:]}"
+    heads = [short(w) for w in waves]
+    NEAR = 0.15      # a fall this big counts toward the 'At risk?' rules
+    ARROW = 0.05     # a change this big gets an arrow
+    cur_v = v[v["wave"] == sel]
+
+    def verdict(item):
         series = means[item]
         now_v = series[wi]
+        if now_v is None:
+            return "—", ""
         before = series[wi - 1] if wi > 0 else None
-        if wi == 0:
-            chg = "first season"
-        elif now_v is None or before is None:
-            chg = "not enough answers"
-        elif abs(now_v - before) < 0.15:
-            chg = "about the same"
-        else:
-            chg = f"{'up' if now_v > before else 'down'} {abs(now_v - before):.1f}"
-        rows.append({"What Mentors told us": LONG[item], "Trend by season": series, "Average (1 to 5)": None if now_v is None else round(now_v, 1),
-                     "Change since last season": chg})
-    st.subheader(f"{sel} at a glance")
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
-                 column_config={"Trend by season": st.column_config.LineChartColumn(y_min=2.5, y_max=4.5, width="medium"),
-                                "Average (1 to 5)": st.column_config.NumberColumn(format="%.1f")})
-    st.caption("Every trend line runs from 2.5 to 4.5 so lines can be compared. A blank means fewer than the minimum number of answers.")
+        before2 = series[wi - 2] if wi > 1 else None
+        s_ = cur_v[item].dropna()
+        low = float((s_ <= 2).mean()) if len(s_) >= k else None
+        why_yes, why_watch = [], []
+        if now_v < 3.0:
+            why_yes.append("average below 3.0")
+        if low is not None and low >= 0.25:
+            why_yes.append(f"{low * 100:.0f}% rated it low")
+        if before is not None and before2 is not None and now_v - before <= -NEAR and before - before2 <= -NEAR:
+            why_yes.append("fell two seasons in a row")
+        if before is not None and now_v - before <= -NEAR:
+            why_watch.append("fell this season")
+        if low is not None and low >= 0.15:
+            why_watch.append(f"{low * 100:.0f}% rated it low")
+        if now_v < 3.3:
+            why_watch.append("average below 3.3")
+        if why_yes:
+            return "Yes", "; ".join(why_yes)
+        if why_watch:
+            return "Watch", "; ".join(why_watch)
+        return "No", ""
+
+    table_rows, flagged = [], []
+    for item in CORE:
+        row = {"What Mentors told us": LONG[item]}
+        for i, w in enumerate(waves):
+            m = means[item][i]
+            p_ = means[item][i - 1] if i > 0 else None
+            if m is None:
+                row[heads[i]] = "—"
+            elif p_ is None:
+                row[heads[i]] = f"{m:.1f}"
+            elif m - p_ >= ARROW:
+                row[heads[i]] = f"▲ {m:.1f}"
+            elif m - p_ <= -ARROW:
+                row[heads[i]] = f"▼ {m:.1f}"
+            else:
+                row[heads[i]] = f"– {m:.1f}"
+        flag, why = verdict(item)
+        row["At risk?"] = flag
+        if flag in ("Yes", "Watch"):
+            flagged.append((LONG[item], flag, why))
+        table_rows.append(row)
+    sc = pd.DataFrame(table_rows)
+
+    def arrow_color(x):
+        x = str(x)
+        if x.startswith("▲"):
+            return "color:#1B7F3B;font-weight:700"
+        if x.startswith("▼"):
+            return "color:#C62828;font-weight:700"
+        return "color:#555555"
+
+    def risk_color(x):
+        return {"Yes": "background-color:#C62828;color:white;font-weight:700", "Watch": "background-color:#FFD9A0;color:#282828;font-weight:700",
+                "No": "background-color:#D6EFD9;color:#1B5E20;font-weight:700"}.get(x, "")
+
+    st.subheader("Season by season")
+    styled = sc.style.map(arrow_color, subset=heads).map(risk_color, subset=["At risk?"])
+    if short(sel) in heads:
+        styled = styled.set_properties(subset=[short(sel)], **{"background-color": "#EEF5FB"})
+    st.dataframe(styled, hide_index=True, width="stretch", height=int(35.5 * (len(sc) + 1)))
+    st.markdown(
+        "**How to read this table.** Each box is the average answer that season (1 is low, 5 is high). "
+        "<span style='color:#1B7F3B;font-weight:700'>▲ green</span> means the average rose since the season before. "
+        "<span style='color:#C62828;font-weight:700'>▼ red</span> means it fell. "
+        "<span style='color:#555;font-weight:700'>–</span> means about the same (within 0.05). The first season has no arrow, and a dash means fewer than "
+        f"{k} answers. The shaded column is the season you picked.", unsafe_allow_html=True)
+    st.markdown(
+        "**At risk?** &nbsp;**Yes**: the average is below 3.0, 1 in 4 Mentors rated it low (1 or 2), or it fell two seasons in a row. &nbsp;"
+        "**Watch**: it fell this season, 15% or more rated it low, or the average is below 3.3. &nbsp;**No**: none of these.")
+    if flagged:
+        st.caption("Flagged in " + sel + ": " + " | ".join(f"{n} ({f.lower()}: {w})" for n, f, w in flagged))
 
     # ---- biggest movers and same season last year
     left_, right_ = st.columns(2)
@@ -235,12 +311,16 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
             for item in CORE:
                 a, b = mean_k(v[v["wave"] == ly][item], k), mean_k(v[v["wave"] == sel][item], k)
                 if a is not None and b is not None:
-                    recs += [{"Area": SHORT[item], "Season": ly, "Average": a}, {"Area": SHORT[item], "Season": sel, "Average": b}]
+                    recs.append({"Area": SHORT[item], "Last": a, "This": b})
             if recs:
-                plot(alt.Chart(pd.DataFrame(recs)).mark_bar().encode(
-                    y=alt.Y("Area:N", sort=SHORT_ORDER, title=None), x=alt.X("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
-                    yOffset="Season:N", color=alt.Color("Season:N", sort=[ly, sel], scale=alt.Scale(domain=[ly, sel], range=["#BDBDBD", BLUE_]),
-                                                        legend=alt.Legend(orient="bottom", direction="horizontal"))), 300)
+                dd = pd.DataFrame(recs)
+                ysel = alt.Y("Area:N", sort=SHORT_ORDER, title=None, axis=alt.Axis(labelLimit=220))
+                xs = alt.Scale(domain=[2.5, 4.5])
+                rule = alt.Chart(dd).mark_rule(color="#BDBDBD", strokeWidth=4).encode(y=ysel, x=alt.X("Last:Q", scale=xs, title="Average (1 to 5)"), x2="This:Q")
+                p_last = alt.Chart(dd).mark_point(filled=True, size=140, color="#919191").encode(y=ysel, x=alt.X("Last:Q", scale=xs))
+                p_this = alt.Chart(dd).mark_point(filled=True, size=140, color=BLUE_).encode(y=ysel, x=alt.X("This:Q", scale=xs))
+                plot(rule + p_last + p_this, 300)
+                st.caption(f"Grey dot: {ly}. Blue dot: {sel}. The line between them shows how far the average moved.")
             else:
                 st.info("Not enough answers in both seasons to compare.")
 
@@ -321,9 +401,13 @@ def _themes(source, v, waves, sel, k):
         den = tg.groupby("wave")["mentor"].nunique()
         mode = st.radio("Show", ["What is hard", "What is working"], horizontal=True, key="theme_mode")
         val = "Negative" if mode == "What is hard" else "Positive"
-        scale_range = ["#FFFFFF", ORANGE_] if val == "Negative" else ["#FFFFFF", BLUE_]
         sub = tg[(tg["valence"] == val) & (tg["theme"] != "T10")]
         cnt = sub.groupby(["wave", "theme"])["mentor"].nunique().reset_index(name="n")
+        BINS = [(0.25, "25% or more"), (0.20, "20-24%"), (0.15, "15-19%"), (0.10, "10-14%"), (0.0, "Under 10%")]
+        ORDER = ["Under 10%", "10-14%", "15-19%", "20-24%", "25% or more"]
+        PALETTE = (["#FDE8DF", "#F9C3AD", "#F59C78", "#EC6237", "#B8431B"] if val == "Negative"
+                   else ["#E3F1FB", "#BDDDF5", "#8CC5EE", "#4CA7E8", "#1A74B8"])
+        bucket = lambda sh: next(lab for lo, lab in BINS if sh >= lo)
         recs = []
         for w in tw:
             for t_, nm in names.items():
@@ -331,23 +415,32 @@ def _themes(source, v, waves, sel, k):
                     continue
                 n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
                 if den.get(w, 0) >= k and n_ >= k:
-                    recs.append({"Season": w, "Theme": nm, "Share": n_ / den[w], "Mentors": int(n_)})
+                    recs.append({"Season": w, "Theme": THEME_SHORT.get(t_, nm), "Share": n_ / den[w], "Mentors": int(n_), "Bucket": bucket(n_ / den[w])})
         st.subheader("Share of Mentors mentioning each theme")
+        what = "was hard" if val == "Negative" else "is working"
+        st.markdown(f"Each box shows the share of Mentors who said something about this theme when asked what {what} for them that season. "
+                    f"**The darker the box, the more Mentors mentioned it.** The key under the chart shows what each color means. "
+                    f"A blank box means fewer than {k} Mentors mentioned it.")
         if recs:
             hm = pd.DataFrame(recs)
             base = alt.Chart(hm).encode(x=alt.X("Season:N", sort=tw, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
                                         y=alt.Y("Theme:N", sort=alt.EncodingSortField("Share", op="sum", order="descending"), title=None, axis=alt.Axis(labelLimit=340)))
-            rect = base.mark_rect(stroke="white", strokeWidth=2).encode(color=alt.Color("Share:Q", scale=alt.Scale(range=scale_range), legend=None))
-            txt = base.mark_text(fontSize=13, fontWeight="bold", color="#282828").encode(text=alt.Text("Share:Q", format=".0%"))
-            plot(rect + txt, 420)
-            st.caption(f"Share of Mentors with a spoken answer that season. A theme with fewer than {k} Mentors in a season is left blank, and life changes outside work are counted only in totals, never shown.")
+            rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
+                color=alt.Color("Bucket:N", sort=ORDER, scale=alt.Scale(domain=ORDER, range=PALETTE),
+                                legend=alt.Legend(title="Share of Mentors:", orient="bottom", direction="horizontal", symbolType="square", symbolSize=260,
+                                                  titleFontSize=13, labelFontSize=12)))
+            txt = base.mark_text(fontSize=13, fontWeight="bold").encode(
+                text=alt.Text("Share:Q", format=".0%"),
+                color=alt.condition(alt.datum.Bucket == "25% or more", alt.value("white"), alt.value("#282828")))
+            plot(rect + txt, 430)
+            st.caption("Life changes outside work are counted in totals only and never shown here.")
         else:
             st.info(f"No theme was mentioned by {k} or more Mentors yet.")
 
-        st.subheader(f"What is new in {sel}")
+        st.subheader("Concerns growing or shrinking?" if val == "Negative" else "Strengths growing or shrinking?")
         wi = tw.index(sel) if sel in tw else None
         if wi is None or wi == 0:
-            st.info("A comparison needs this season and an earlier season with tagged answers.")
+            st.info("This compares a season with the one before it, so it needs at least two seasons of tagged answers.")
         else:
             pr = tw[wi - 1]
             ch = []
@@ -359,20 +452,21 @@ def _themes(source, v, waves, sel, k):
                     return n_ / den[w] if den.get(w, 0) >= k and n_ >= k else None
                 a, b = share(pr), share(sel)
                 if a is not None and b is not None:
-                    ch.append({"Theme": nm, "Change": b - a})
+                    ch.append({"Theme": THEME_SHORT.get(t_, nm), "Change": b - a})
             if ch:
                 cd = pd.DataFrame(ch)
-                more_good = val == "Positive"
-                cd["Direction"] = np.where(cd["Change"] >= 0, "More mentions", "Fewer mentions")
-                up_color, down_color = (BLUE_, ORANGE_) if more_good else (ORANGE_, BLUE_)
+                better = (cd["Change"] <= 0) if val == "Negative" else (cd["Change"] >= 0)
+                cd["Direction"] = np.where(better, "Moving in a better direction", "Moving in a worse direction")
                 bar = alt.Chart(cd).mark_bar().encode(
-                    x=alt.X("Change:Q", axis=alt.Axis(format="+%"), title=f"Change in share of Mentors, {pr} to {sel}"),
+                    x=alt.X("Change:Q", axis=alt.Axis(format="+%"), title="Fewer Mentors mentioned it   <   0   >   More Mentors mentioned it"),
                     y=alt.Y("Theme:N", sort=alt.EncodingSortField("Change", order="descending"), title=None, axis=alt.Axis(labelLimit=340)),
-                    color=alt.Color("Direction:N", scale=alt.Scale(domain=["More mentions", "Fewer mentions"], range=[up_color, down_color]),
-                                    legend=alt.Legend(orient="bottom", direction="horizontal")))
+                    color=alt.Color("Direction:N", scale=alt.Scale(domain=["Moving in a better direction", "Moving in a worse direction"], range=[BLUE_, ORANGE_]),
+                                    legend=alt.Legend(orient="bottom", direction="horizontal", symbolType="square", symbolSize=260)))
                 plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.0%")), 380)
+                st.caption(f"Change in the share of Mentors mentioning each theme, {pr} to {sel}. A bar to the right means more Mentors mentioned it. "
+                           + ("Blue is good news (fewer concerns). Orange is a concern growing." if val == "Negative" else "Blue is good news (a strength growing). Orange is a strength fading."))
             else:
-                st.info("Not enough answers on both seasons to compare themes.")
+                st.info("Not enough answers in both seasons to compare themes.")
 
         st.subheader("In their words")
         qs = sub[(sub["quote"] != "") & (sub["aggregate_only"].astype(int) == 0)]
@@ -487,6 +581,7 @@ def page_risk():
     user = require("leader", "admin")
     k = _k()
     st.title("Risk tracker")
+    stage_note()
     msg = st.session_state.pop("flash", None)
     if msg:
         st.success(msg)

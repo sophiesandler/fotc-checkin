@@ -57,7 +57,7 @@
    "order": 50,
    "block": "Stable core",
    "type": "Rating",
-   "text": "Thinking about the hours when your youth are in school, how meaningful did that time feel over the last three months?",
+   "text": "Thinking about the times when your youth were not available, how meaningful did your time feel over the last season?",
    "options": "1 = Not at all meaningful ... 5 = Very meaningful (or Not applicable)",
    "themes": "T01 School-Day Gap",
    "wave": "Quarterly + Exit",
@@ -399,6 +399,58 @@
    "active": true,
    "quarters": [],
    "first_year_always": false
+  },
+  {
+   "id": "P01",
+   "order": 10,
+   "block": "Pilot feedback",
+   "type": "Rating",
+   "text": "It was easy to use this check-in.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "About the check-in itself",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "P02",
+   "order": 20,
+   "block": "Pilot feedback",
+   "type": "Rating",
+   "text": "I felt comfortable answering honestly.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "About the check-in itself",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "P03",
+   "order": 30,
+   "block": "Pilot feedback",
+   "type": "Rating",
+   "text": "I trust that my answers will be used to support Mentors, not to judge them.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "About the check-in itself",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "P04",
+   "order": 40,
+   "block": "Pilot feedback",
+   "type": "Spoken",
+   "text": "What would make this check-in better?",
+   "options": "Audio recording or typed response",
+   "themes": "About the check-in itself",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
   }
  ],
  "themes": [
@@ -684,8 +736,8 @@
  "settings": {
   "consent_text": "This is a short check-in about your work as a Professional Mentor.\n\n- **Your answers are confidential, not anonymous.** A designated support person can see your individual answers. Your supervisor cannot, and leadership sees only group results.\n- **Every question can be skipped.**\n- **Audio is used to make a written transcript and is then deleted.**\n- **Your answers are used to offer support, never to evaluate you.**\n- If you describe a safety concern, harassment, or a concern about a child's welfare, it will be passed to a designated person so help can follow.\n\n*Draft wording. Friends of the Children - Chicago must review and approve this before real use.*",
   "thanks_text": "Your answers were saved. They help Friends of the Children understand what supports Mentors and what gets in the way.\n\nAfter each quarter, leadership will share what changed because of what Mentors said. If you raised a safety concern, a designated person will follow up with you.",
-  "current_quarter": "1",
   "min_group": "5",
-  "app_title": "Mentor check-in"
+  "app_title": "Mentor check-in",
+  "program_stage": "Pilot year"
  }
 }

@@ -2,7 +2,7 @@
 import copy
 import re
 
-BLOCKS = ["Stable core", "Rotating", "Exit only", "Closing", "Optional"]
+BLOCKS = ["Stable core", "Rotating", "Exit only", "Pilot feedback", "Closing", "Optional"]
 BLOCK_ORDER = {b: i for i, b in enumerate(BLOCKS)}
 TYPES = ["Rating", "Spoken", "Checklist"]
 WAVES = ["Quarterly + Exit", "Quarterly", "Exit"]
@@ -10,10 +10,11 @@ BLOCK_HELP = {
     "Stable core": "Asked every quarter, so trends can be compared. Change rarely.",
     "Rotating": "Asked only in the quarters you choose. This is the flexible space.",
     "Exit only": "Asked only in the exit interview.",
+    "Pilot feedback": "Questions about the check-in itself. Asked each season during the pilot year; retire them afterward.",
     "Closing": "The last open question of a check-in.",
     "Optional": "A sensitive or extra question. Always skippable.",
 }
-PREFIX = {"Stable core": "C", "Rotating": "R", "Exit only": "X", "Closing": "Z", "Optional": "O"}
+PREFIX = {"Stable core": "C", "Rotating": "R", "Exit only": "X", "Pilot feedback": "P", "Closing": "Z", "Optional": "O"}
 CONTROL = ["Program-controllable", "Partly controllable", "External", "Unknown"]
 
 
@@ -164,3 +165,12 @@ Return a single JSON object and nothing else (no markdown fences, no commentary)
   "review_reason": null
 }""")
     return "\n\n".join(parts)
+
+
+AGREE = "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)"
+PILOT_QUESTIONS = [
+    dict(id="P01", order=10, block="Pilot feedback", type="Rating", text="It was easy to use this check-in.", options=AGREE, themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
+    dict(id="P02", order=20, block="Pilot feedback", type="Rating", text="I felt comfortable answering honestly.", options=AGREE, themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
+    dict(id="P03", order=30, block="Pilot feedback", type="Rating", text="I trust that my answers will be used to support Mentors, not to judge them.", options=AGREE, themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
+    dict(id="P04", order=40, block="Pilot feedback", type="Spoken", text="What would make this check-in better?", options="Audio recording or typed response", themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
+]

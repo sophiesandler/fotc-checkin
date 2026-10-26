@@ -8,6 +8,7 @@ import ui
 import views
 import dashboard
 import tagging
+import pilot
 from auth import login_screen
 
 
@@ -52,24 +53,26 @@ if not user:
                    "Add a DATABASE_URL secret to keep your data.")
     st.stop()
 
+stage = db.get_setting("program_stage", "Pilot year")
+pilot_first = stage == "Pilot year"
+pg_pilot = st.Page(pilot.page_pilot, title="Pilot year", url_path="pilot", default=pilot_first)
+pg_dash = st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=not pilot_first)
+pg_risk = st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk")
+head = [pg_pilot, pg_dash, pg_risk] if pilot_first else [pg_dash, pg_risk, pg_pilot]
 PAGES = {
     "mentor": [st.Page(views.page_checkin, title="Check-in", url_path="checkin", default=True),
                st.Page(views.page_guide, title="Guide", url_path="guide")],
-    "leader": [st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=True),
-               st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk"),
-               st.Page(views.page_questions, title="Questions", url_path="questions"),
-               st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
-               st.Page(views.page_guide, title="Guide", url_path="guide")],
-    "admin": [st.Page(dashboard.page_dashboard, title="Dashboard", url_path="dashboard", default=True),
-              st.Page(dashboard.page_risk, title="Risk tracker", url_path="risk"),
-              st.Page(views.page_responses, title="Responses", url_path="responses"),
-              st.Page(tagging.page_tag_answers, title="Tag answers", url_path="tag-answers"),
-              st.Page(views.page_questions, title="Questions", url_path="questions"),
-              st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
-              st.Page(views.page_users, title="People", url_path="people"),
-              st.Page(views.page_settings, title="Settings", url_path="settings"),
-              st.Page(views.page_audit, title="Activity log", url_path="activity"),
-              st.Page(views.page_guide, title="Guide", url_path="guide")],
+    "leader": head + [st.Page(views.page_questions, title="Questions", url_path="questions"),
+                      st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
+                      st.Page(views.page_guide, title="Guide", url_path="guide")],
+    "admin": head + [st.Page(views.page_responses, title="Responses", url_path="responses"),
+                     st.Page(tagging.page_tag_answers, title="Tag answers", url_path="tag-answers"),
+                     st.Page(views.page_questions, title="Questions", url_path="questions"),
+                     st.Page(views.page_coding_key, title="Coding key", url_path="coding-key"),
+                     st.Page(views.page_users, title="People", url_path="people"),
+                     st.Page(views.page_settings, title="Settings", url_path="settings"),
+                     st.Page(views.page_audit, title="Activity log", url_path="activity"),
+                     st.Page(views.page_guide, title="Guide", url_path="guide")],
 }
 nav = st.navigation(PAGES[user["role"]])
 with st.sidebar:

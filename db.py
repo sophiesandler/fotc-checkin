@@ -40,6 +40,17 @@ tags = Table("tags", meta,
              Column("response_id", Integer), Column("ts", String(40)), Column("theme", String(10)), Column("valence", String(20)),
              Column("quote", Text), Column("aggregate_only", Boolean), Column("confidence", String(10)),
              Column("escalation", Boolean), Column("by_user", String(80)))
+sessions = Table("sessions", meta,
+                 Column("session_id", String(40), primary_key=True), Column("participant_code", String(80)), Column("season", String(20)),
+                 Column("session_type", String(20)), Column("n_questions", Integer), Column("started", String(40)), Column("last_ts", String(40)),
+                 Column("last_idx", Integer), Column("completed", Boolean))
+reviews = Table("reviews", meta,
+                Column("response_id", Integer, primary_key=True), Column("by_user", String(80)), Column("ts", String(40)),
+                Column("reviewed", Boolean), Column("starred", Boolean), Column("excerpt", Text))
+actions = Table("actions", meta,
+                Column("id", Integer, primary_key=True, autoincrement=True), Column("ts", String(40)), Column("season", String(20)),
+                Column("raised", Text), Column("action", Text), Column("status", String(20)), Column("owner", String(80)),
+                Column("result", String(20)), Column("note", Text), Column("by_user", String(80)))
 support = Table("support_actions", meta,
                 Column("id", Integer, primary_key=True, autoincrement=True),
                 Column("ts", String(40)), Column("source", String(10)), Column("mentor", String(80)),
@@ -321,3 +332,62 @@ def get_tags():
     with engine().connect() as c:
         rows = c.execute(select(*cols).select_from(tags.join(responses, tags.c.response_id == responses.c.id))).mappings()
         return [dict(r) for r in rows]
+
+
+# ---------------- pilot year: sessions, answer reviews, and the "you said, we did" log
+def start_session(sid, code, season, stype, n_questions):
+    _ensure(sessions)
+    with engine().begin() as c:
+        c.execute(insert(sessions).values(session_id=sid, participant_code=code, season=season, session_type=stype, n_questions=n_questions,
+                                          started=now(), last_ts=now(), last_idx=0, completed=False))
+
+
+def update_session(sid, last_idx, completed):
+    _ensure(sessions)
+    with engine().begin() as c:
+        c.execute(update(sessions).where(sessions.c.session_id == sid).values(last_idx=last_idx, last_ts=now(), completed=bool(completed)))
+
+
+def get_sessions():
+    _ensure(sessions)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(select(sessions)).mappings()]
+
+
+def count_active_mentors():
+    with engine().connect() as c:
+        return c.execute(select(func.count()).select_from(users).where((users.c.role == "mentor") & (users.c.active == True))).scalar()  # noqa: E712
+
+
+def upsert_review(response_id, user, reviewed, starred, excerpt):
+    _ensure(reviews)
+    with engine().begin() as c:
+        vals = dict(by_user=user, ts=now(), reviewed=bool(reviewed), starred=bool(starred), excerpt=excerpt or "")
+        if c.execute(select(reviews.c.response_id).where(reviews.c.response_id == response_id)).first():
+            c.execute(update(reviews).where(reviews.c.response_id == response_id).values(**vals))
+        else:
+            c.execute(insert(reviews).values(response_id=response_id, **vals))
+
+
+def get_reviews():
+    _ensure(reviews)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(select(reviews)).mappings()]
+
+
+def add_action(season, raised, action, status, owner, by_user):
+    _ensure(actions)
+    with engine().begin() as c:
+        c.execute(insert(actions).values(ts=now(), season=season, raised=raised, action=action, status=status, owner=owner, result="", note="", by_user=by_user))
+
+
+def update_action(aid, **fields):
+    _ensure(actions)
+    with engine().begin() as c:
+        c.execute(update(actions).where(actions.c.id == aid).values(**fields))
+
+
+def get_actions():
+    _ensure(actions)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(select(actions).order_by(actions.c.id.desc())).mappings()]

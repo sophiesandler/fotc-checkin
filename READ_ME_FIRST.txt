@@ -1,6 +1,5 @@
-Upload all of the files in this folder (except this one) to your GitHub repository:
-  GitHub > your fotc-checkin repository > Add file > Upload files > drag the files in > Commit changes.
-They replace the old files with the same names and add seasons.py, tagging.py, and demo_tags.csv.
-Then open Manage app > Reboot app once.
-After it restarts: sign in as admin > Settings > open the current season > Save.
-Then Questions > C05 > reword the school-day question (see the chat for the wording).
+This zip holds every app file. Upload all of them (everything except this READ_ME) to your GitHub repository:
+  GitHub > fotc-checkin > Add file > Upload files > drag all the files in > Commit changes.
+NEW: pilot.py. Changed: app.py, content.py, dashboard.py, db.py, views.py, seed_content.json.
+Check afterward that no file in GitHub has "(1)" or "(2)" in its name. Then Manage app > Reboot app.
+Then sign in as admin: Settings > Program stage should say "Pilot year" > Save.

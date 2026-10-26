@@ -37,12 +37,18 @@ def page_checkin():
             session = ct.build_session(qs, stype, quarter, bool(fresh.get("first_year")))
             st.session_state.ci = dict(phase="q", idx=0, sid=uuid.uuid4().hex[:10], ver=ver, session=session,
                                        stype=stype, quarter=quarter, season=season)
+            db.start_session(st.session_state.ci["sid"], user["username"], season, stype, len(session))
             st.rerun()
         return
 
     if ci["phase"] == "done":
         st.subheader("Thank you")
         st.markdown(db.get_setting("thanks_text"))
+        done_ = [a for a in db.get_actions() if a["status"] == "Done"][:5]
+        if done_:
+            st.subheader("What changed because of what Mentors said")
+            for a in done_:
+                st.markdown(f"- **You raised:** {a['raised']}  \n  **We did:** {a['action']}")
         if st.button("Start over (practice)"):
             st.session_state.ci = {"phase": "consent"}
             st.session_state.pop("ci_agree", None)
@@ -94,6 +100,7 @@ def page_checkin():
                 row["checklist_selected"] = "; ".join(sel); row["checklist_top"] = top or ""; row["skipped"] = False
         db.add_responses([row])
         ci["idx"] += 1
+        db.update_session(ci["sid"], ci["idx"], ci["idx"] >= len(session))
 
     c1, c2, _ = st.columns([1, 1, 3])
     if c1.button("Finish" if last else "Next", type="primary", key="n" + k):
@@ -546,12 +553,14 @@ def page_settings():
     season_name = s1.selectbox("Which season is open for check-ins?", seasons.SEASONS, index=seasons.SEASONS.index(cur_name),
                                help="Check-ins are stamped with this season, and it picks which rotating questions are asked.")
     season_year = s2.number_input("Year", min_value=2024, max_value=2040, value=int(cur_year), step=1)
+    stage = st.selectbox("Program stage", ["Pilot year", "Established"], index=0 if db.get_setting("program_stage", "Pilot year") == "Pilot year" else 1,
+                         help="During the pilot year, leadership lands on the Pilot year page. The Dashboard and Risk tracker become more useful after several seasons.")
     k = st.number_input("Smallest group shown in reports (privacy)", min_value=2, max_value=50, value=int(db.get_setting("min_group", "5")))
     consent = st.text_area("Welcome and consent text (Mentors see this first)", db.get_setting("consent_text"), height=260)
     thanks = st.text_area("Thank-you message", db.get_setting("thanks_text"), height=140)
     st.caption("Friends of the Children staff and legal review should approve the consent text before any real use.")
     if st.button("Save settings", type="primary"):
-        for key, val in (("app_title", title), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
+        for key, val in (("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
             db.set_setting(key, val)
         db.log(me["username"], "changed settings")
         st.session_state.flash = "Settings saved."; st.rerun()
@@ -576,7 +585,8 @@ A short check-in about your work. It takes a few minutes. Every question can be 
 
 If you share a safety concern, a designated person will follow up so you can get help.""",
     "leader": """### What you can do
-- **Dashboard** shows group results by season: trends and themes. Groups under the minimum size are hidden.
+- **Pilot year** is the landing page during year one: participation, the first-season baseline, a summary of what Mentors said, and what has been done about it.
+- **Dashboard** shows group results by season: trends and themes. It becomes more useful after several seasons. Groups under the minimum size are hidden.
 - **Risk tracker** shows the share of Mentors with a support signal, and which signals appear most. Individual Mentors are not shown to you.
 - **Questions** and **Coding key** show what is being asked and how answers are tagged. Only the program admin can edit them.
 
@@ -589,6 +599,9 @@ Use the switch at the top of each page to look at live check-ins or the clearly 
 
 ### Changing the coding key
 Open **Coding key** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
+
+### Pilot year
+During year one, start on **Pilot year**: check that the check-in works (participation, time, skipped questions), read what Mentors said in the **Listening log**, star a few standout excerpts for leadership, and record what you did about each concern under **You said, we did**.
 
 ### Dashboard and Risk tracker
 - **Dashboard** and **Risk tracker** show group results by season. Open a season in **Settings** before Mentors start their check-ins. On the Risk tracker you also see the list of Mentors who might benefit from a supportive check-in, and you can mark when one has been offered.
