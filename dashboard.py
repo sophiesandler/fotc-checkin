@@ -37,19 +37,26 @@ def _k():
 
 
 # ---------------------------------------------------------------- data
+def _mtime(name):
+    return os.path.getmtime(os.path.join(HERE, name))
+
+
 @st.cache_data
+def _csv(name, mtime):
+    """Cached by file modification time, so a new version of the file is picked up without a reboot."""
+    return pd.read_csv(os.path.join(HERE, name))
+
+
 def demo_checkins():
-    return pd.read_csv(os.path.join(HERE, "demo_checkins.csv"))
+    return _csv("demo_checkins.csv", _mtime("demo_checkins.csv")).copy()
 
 
-@st.cache_data
 def demo_exits():
-    return pd.read_csv(os.path.join(HERE, "demo_exits.csv"))
+    return _csv("demo_exits.csv", _mtime("demo_exits.csv")).copy()
 
 
-@st.cache_data
 def demo_tags():
-    return pd.read_csv(os.path.join(HERE, "demo_tags.csv")).fillna({"quote": ""})
+    return _csv("demo_tags.csv", _mtime("demo_tags.csv")).fillna({"quote": ""})
 
 
 def season_of(row):
