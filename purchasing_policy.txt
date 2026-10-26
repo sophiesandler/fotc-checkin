@@ -1,0 +1,11 @@
+LAKEVIEW FOODS - PURCHASING POLICY 
+
+1. Pay only vendors listed in approved_vendors.txt.
+2. Every invoice must reference a purchase order (PO) number.
+3. Invoices over $5,000 must be approved by a VP (the approver field must show "VP").
+4. The invoice total must equal quantity x unit price.
+5. Duplicate invoices (same vendor, quantity, unit price and total, with a different invoice number) must be held, not paid.
+
+Required output from the reviewer:
+- A table of flagged invoices with the rule each one breaks.
+- Draft emails to the affected vendors. Do not send anything.

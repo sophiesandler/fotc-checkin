@@ -1,0 +1,9 @@
+GOAL: Reconcile the invoices in this folder against purchasing_policy.txt.
+CONTEXT: Approved vendors are in approved_vendors.txt.
+STEPS:
+1. Read all files. Do not change anything.
+2. Build a table of violations. STOP. Show me. Wait for my OK.
+3. Draft one email per affected vendor. STOP. Wait for my OK.
+4. Write HANDOFF.md using the template in HANDOFF_template.md.
+NEVER: send, delete, or edit the original files.
+REPORT: End each step with what you did and what you need from me.

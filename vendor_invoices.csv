@@ -1,0 +1,26 @@
+invoice_id,vendor,invoice_date,description,qty,unit_price,total,po_number,approver
+INV-1000,Lakeshore Print & Pack,2026-09-02,Printed materials,50,18.75,937.50,PO-7000,R. Patel (VP)
+INV-1001,Northgate Office Supply,2026-09-02,Office supplies,60,35.00,2100.00,PO-7001,J. Chen
+INV-1002,Brightline Catering,2026-09-03,Event catering,100,85.00,8500.00,PO-7002,R. Patel (VP)
+INV-1003,Harbor IT Services,2026-09-05,IT support hours,10,18.75,187.50,PO-7003,M. Alvarez
+INV-1004,Summit Facilities,2026-09-05,Facilities service,40,35.00,1400.00,PO-7004,R. Patel (VP)
+INV-1005,Redwood Courier,2026-09-06,Courier deliveries,20,4.50,90.00,,J. Chen
+INV-1006,Lakeshore Print & Pack,2026-09-08,Printed materials,25,12.00,300.00,PO-7006,M. Alvarez
+INV-1007,Northgate Office Supply,2026-09-09,Office supplies,10,12.00,120.00,PO-7007,M. Alvarez
+INV-1008,Brightline Catering,2026-09-09,Event catering,20,4.50,90.00,PO-7008,M. Alvarez
+INV-1030,Harbor IT Services,2026-09-08,IT support hours,10,18.75,187.50,PO-7003,M. Alvarez
+INV-1009,Harbor IT Services,2026-09-10,IT support hours,80,12.00,960.00,PO-7009,M. Alvarez
+INV-1010,Summit Facilities,2026-09-11,Facilities service,25,18.75,468.75,PO-7010,R. Patel (VP)
+INV-1011,Redwood Courier,2026-09-12,Courier deliveries,120,60.00,7200.00,PO-7011,J. Chen
+INV-1012,Lakeshore Print & Pack,2026-09-14,Printed materials,60,12.00,720.00,PO-7012,J. Chen
+INV-1013,Northgate Office Supply,2026-09-15,Office supplies,10,18.75,187.50,PO-7013,M. Alvarez
+INV-1014,Brightline Catering,2026-09-15,Event catering,20,18.75,375.00,PO-7014,J. Chen
+INV-1015,Cobalt Signage LLC,2026-09-16,Signage,25,85.00,2125.00,PO-7015,R. Patel (VP)
+INV-1016,Summit Facilities,2026-09-18,Facilities service,60,60.00,3600.00,PO-7016,M. Alvarez
+INV-1017,Redwood Courier,2026-09-19,Courier deliveries,25,18.75,468.75,PO-7017,J. Chen
+INV-1018,Lakeshore Print & Pack,2026-09-19,Printed materials,60,18.75,1125.00,PO-7018,J. Chen
+INV-1019,Northgate Office Supply,2026-09-20,Office supplies,40,60.00,2490.00,PO-7019,M. Alvarez
+INV-1020,Brightline Catering,2026-09-22,Event catering,25,4.50,112.50,PO-7020,J. Chen
+INV-1021,Harbor IT Services,2026-09-23,IT support hours,10,35.00,350.00,PO-7021,J. Chen
+INV-1022,Summit Facilities,2026-09-24,Facilities service,80,4.50,360.00,PO-7022,M. Alvarez
+INV-1023,Redwood Courier,2026-09-24,Courier deliveries,60,12.00,720.00,PO-7023,M. Alvarez
