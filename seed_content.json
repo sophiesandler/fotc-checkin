@@ -1,0 +1,691 @@
+{
+ "questions": [
+  {
+   "id": "C01",
+   "order": 10,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "How likely are you to still be a Professional Mentor with Friends of the Children one year from now?",
+   "options": "1 = Very unlikely ... 5 = Very likely (or Prefer not to answer)",
+   "themes": "All themes",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C02",
+   "order": 20,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "Over the last three months, my workload has been sustainable.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T02 Portfolio & Workload",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C03",
+   "order": 30,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "I get the support I need from my supervisor.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T04 Supervisor & Program Team",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C04",
+   "order": 40,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "I understand what is expected of me in my role.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T05 Role Clarity",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C05",
+   "order": 50,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "Thinking about the hours when your youth are in school, how meaningful did that time feel over the last three months?",
+   "options": "1 = Not at all meaningful ... 5 = Very meaningful (or Not applicable)",
+   "themes": "T01 School-Day Gap",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C06",
+   "order": 60,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "I have enough emotional support to cope with the hard parts of this work.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T08 Youth/Family Challenges & Safety",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C07",
+   "order": 70,
+   "block": "Stable core",
+   "type": "Rating",
+   "text": "I feel connected to the mission of Friends of the Children.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T09 Mission & Model Fit",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C08",
+   "order": 80,
+   "block": "Stable core",
+   "type": "Spoken",
+   "text": "Thinking about the last three months, what has been the most rewarding part of your work?",
+   "options": "Audio recording or typed response",
+   "themes": "All themes",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C09",
+   "order": 90,
+   "block": "Stable core",
+   "type": "Spoken",
+   "text": "What has been the hardest part of your work over the last three months?",
+   "options": "Audio recording or typed response",
+   "themes": "All themes",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "Z01",
+   "order": 100,
+   "block": "Closing",
+   "type": "Spoken",
+   "text": "Is there anything else you want Friends of the Children leadership to know?",
+   "options": "Audio recording or typed response",
+   "themes": "T99 Other / Emerging",
+   "wave": "Quarterly + Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "O01",
+   "order": 110,
+   "block": "Optional",
+   "type": "Spoken",
+   "text": "Optional: Is there anything outside of work that may affect your plans over the next year? You can skip this question.",
+   "options": "Audio recording or typed response",
+   "themes": "T10 Life Changes",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "R01",
+   "order": 120,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "I can keep healthy boundaries between my work and my personal life.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T03 Time & Boundaries",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    1
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "R02",
+   "order": 130,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "I feel connected to my teammates.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T11 Team Culture & Belonging",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    1,
+    4
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "R03",
+   "order": 140,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "I feel prepared for the challenges of my work.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T06 Training & Onboarding",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    2
+   ],
+   "first_year_always": true
+  },
+  {
+   "id": "R04",
+   "order": 150,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "I see a realistic path to grow my career here.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T07 Pay & Career Growth",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    2
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "R05",
+   "order": 160,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "My pay and benefits make it possible for me to stay in this work for the long term.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T07 Pay & Career Growth",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    3
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "R06",
+   "order": 170,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "My ideas and concerns are taken seriously by the team.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T04 Supervisor & Program Team; T11 Team Culture & Belonging",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    3
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "R07",
+   "order": 180,
+   "block": "Rotating",
+   "type": "Rating",
+   "text": "I feel safe doing my work in the community.",
+   "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
+   "themes": "T08 Youth/Family Challenges & Safety",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    4
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "S01",
+   "order": 190,
+   "block": "Rotating",
+   "type": "Spoken",
+   "text": "Tell us how you typically use the time when your youth are in school.",
+   "options": "Audio recording or typed response",
+   "themes": "T01 School-Day Gap",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    1
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "S02",
+   "order": 200,
+   "block": "Rotating",
+   "type": "Spoken",
+   "text": "Tell us about a recent time you felt well supported by your team, or wished you had more support. What happened?",
+   "options": "Audio recording or typed response",
+   "themes": "T04 Supervisor & Program Team; T11 Team Culture & Belonging",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    3
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "S03",
+   "order": 210,
+   "block": "Rotating",
+   "type": "Spoken",
+   "text": "What is one thing that would help you feel better prepared for your work with youth and caregivers?",
+   "options": "Audio recording or typed response",
+   "themes": "T06 Training & Onboarding",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    2
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "S04",
+   "order": 220,
+   "block": "Rotating",
+   "type": "Spoken",
+   "text": "Walk us through a typical busy week. Which parts feel sustainable, and which don't?",
+   "options": "Audio recording or typed response",
+   "themes": "T02 Portfolio & Workload; T03 Time & Boundaries",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [
+    4
+   ],
+   "first_year_always": false
+  },
+  {
+   "id": "S05",
+   "order": 230,
+   "block": "Rotating",
+   "type": "Spoken",
+   "text": "Who do you turn to on the team when work gets hard, and how well does that work for you?",
+   "options": "Audio recording or typed response",
+   "themes": "T11 Team Culture & Belonging",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "S06",
+   "order": 240,
+   "block": "Rotating",
+   "type": "Spoken",
+   "text": "Where do you see yourself with Friends of the Children three years from now?",
+   "options": "Audio recording or typed response",
+   "themes": "T07 Pay & Career Growth; T09 Mission & Model Fit",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "X01",
+   "order": 250,
+   "block": "Exit only",
+   "type": "Spoken",
+   "text": "What was the main reason you decided to leave?",
+   "options": "Audio recording or typed response",
+   "themes": "All themes",
+   "wave": "Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "X02",
+   "order": 260,
+   "block": "Exit only",
+   "type": "Spoken",
+   "text": "Is there anything Friends of the Children could have done differently that might have changed your decision?",
+   "options": "Audio recording or typed response",
+   "themes": "All themes",
+   "wave": "Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "X03",
+   "order": 270,
+   "block": "Exit only",
+   "type": "Checklist",
+   "text": "Which of these played a role in your decision? Select all that apply, then mark the one that mattered most.",
+   "options": "Meaningful work during school hours; Size of my portfolio or workload; Hours, schedule, and work-life balance; Relationship with my supervisor or program team; Clarity of my role and expectations; Training and onboarding; Pay, benefits, or career path; Emotional toll or safety concerns related to the work; Fit with the long-term model and mission; Life changes or an outside opportunity; Team connection and culture; Something else",
+   "themes": "T01 School-Day Gap; T02 Portfolio & Workload; T03 Time & Boundaries; T04 Supervisor & Program Team; T05 Role Clarity; T06 Training & Onboarding; T07 Pay & Career Growth; T08 Youth/Family Challenges & Safety; T09 Mission & Model Fit; T10 Life Changes; T11 Team Culture & Belonging; T99 Other / Emerging",
+   "wave": "Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "X04",
+   "order": 280,
+   "block": "Exit only",
+   "type": "Rating",
+   "text": "Would you consider returning to Friends of the Children in the future?",
+   "options": "1 = Definitely not ... 5 = Definitely (or Prefer not to answer)",
+   "themes": "All themes",
+   "wave": "Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "X05",
+   "order": 290,
+   "block": "Exit only",
+   "type": "Spoken",
+   "text": "What advice would you give a new Professional Mentor?",
+   "options": "Audio recording or typed response",
+   "themes": "All themes",
+   "wave": "Exit",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  }
+ ],
+ "themes": [
+  {
+   "id": "T01",
+   "name": "School-Day Gap & Meaningful Work",
+   "definition": "Mentor comments on how they spend weekday school hours, when most youth are not accessible, and whether that time feels purposeful or idle.",
+   "context": "Professional Mentors bridge school, home, and community and average 12-16 hours per month with each youth, but Friends Chicago cannot access most children during the school day. Leadership has asked whether Mentors have enough meaningful work in those hours. Tagged with valence so the data can show whether the gap is a concern, neutral, or even a benefit.",
+   "controllability": "Program-controllable",
+   "phrases": [
+    "From 9 to 3 I'm mostly waiting for school to let out, and I'm not sure what I'm supposed to be doing.",
+    "I'd love to use the school day for something that actually helps my youth, but there's no clear plan for it.",
+    "The school-day hours let me catch up on notes and plan activities, so honestly it doesn't bother me.",
+    "Some days I feel like I'm being paid to sit at the Clubhouse."
+   ],
+   "keywords": "school day, school hours, during school, daytime, idle, downtime, waiting, nothing to do, busy work, not enough to do, sitting around, empty hours, can't see my youth, no access to youth",
+   "active": true
+  },
+  {
+   "id": "T02",
+   "name": "Portfolio & Workload Burnout",
+   "definition": "Mentor describes the number of youth, families, and tasks in their portfolio as more (or less) than they can sustain.",
+   "context": "'Portfolio' is the organization's term for the youth a Mentor serves ('caseload' is a synonym Mentors may still use). Each youth means an average of 12-16 hours a month of direct time plus school, home, and community coordination, and the model depends on the same adult staying for 12.5 years, so an overstretched portfolio threatens both retention and relationship quality.",
+   "controllability": "Program-controllable",
+   "phrases": [
+    "I have too many youth in my portfolio right now and I can't give each one what I promised.",
+    "I'm exhausted by Thursday and the weekend isn't enough to reset.",
+    "When one youth has a crisis, everyone else's check-ins get pushed.",
+    "My portfolio feels manageable, and that's a big part of why I'm still here."
+   ],
+   "keywords": "portfolio, caseload, too many youth, too many kids, too many families, stretched thin, spread thin, overwhelmed, burned out, burnout, exhausted, can't keep up, behind on, workload, manageable",
+   "active": true
+  },
+  {
+   "id": "T03",
+   "name": "Time Commitment & Work-Life Boundaries",
+   "definition": "Mentor talks about hours, schedule, after-school/evening/weekend expectations, and their ability to separate work from personal life.",
+   "context": "Mentors average 12-16 hours per month with each youth while bridging school, home, and community. Assumption to validate: because most youth contact falls outside school hours, schedules may skew to afternoons, evenings, and weekends, and caregivers may reach out off-hours.",
+   "controllability": "Partly controllable",
+   "phrases": [
+    "Most of my time with the youth is after school, so my day starts late and ends late.",
+    "Families text me at night and I feel like I can't say no.",
+    "I can't plan my own life around a schedule that changes week to week.",
+    "The flexibility is great; I can shift my hours around my youth's activities."
+   ],
+   "keywords": "hours, schedule, evenings, weekends, after school, on call, always available, time off, boundaries, work-life, work life balance, overtime, flexibility, text at night",
+   "active": true
+  },
+  {
+   "id": "T04",
+   "name": "Supervisor & Program Team Relationship",
+   "definition": "Mentor describes the quality of support, feedback, trust, and responsiveness from their direct supervisor and the program management team.",
+   "context": "The Program Director and program management team supervise Mentors day to day, and Friends Chicago is already improving supervision; this theme shows which supervision behaviors matter to Mentors.",
+   "controllability": "Program-controllable",
+   "phrases": [
+    "My supervisor checks in on me, not just on my numbers, and that makes me want to stay.",
+    "I bring problems up and nothing happens, so I've stopped bringing them up.",
+    "I'm not sure my supervisor has my back when a family pushes back.",
+    "Our one-on-ones keep getting canceled."
+   ],
+   "keywords": "supervisor, supervision, one-on-one, 1:1, check-in, manager, feedback, support, my back, listened to, ignored, responsive, program director, program team, micromanage, recognized",
+   "active": true
+  },
+  {
+   "id": "T05",
+   "name": "Role Clarity & Expectations",
+   "definition": "Mentor says whether they understand what the job requires, how success is measured, and how documentation and data tasks fit in.",
+   "context": "The role spans an individual road map built with each youth and caregivers, support across five focus areas (Building Independence, Goal Setting, Literacy, Team of Support, Self Awareness), and a data-driven 'evaluate, measure, improve' culture, at a chapter founded in 2018. Documentation and data-tracking burden is included here and can be split out if it proves frequent.",
+   "controllability": "Program-controllable",
+   "phrases": [
+    "I'm not sure what a 'good' week looks like for me.",
+    "The expectations changed after I started and nobody explained why.",
+    "I spend more time on documentation than with my youth.",
+    "I know how my weekly work connects to each youth's road map."
+   ],
+   "keywords": "expectations, unclear, not sure what, job description, role, goals, documentation, paperwork, data entry, reporting, metrics, tracking, notes, priorities, road map, core assets, focus areas, evaluation, changed",
+   "active": true
+  },
+  {
+   "id": "T06",
+   "name": "Training, Onboarding & Skill Support",
+   "definition": "Mentor comments on whether onboarding, training, and ongoing coaching prepared them to work with youth and families facing the greatest obstacles.",
+   "context": "Mentors are described as experienced in youth development, highly trained, and receiving ongoing training, and the model uses a trauma-informed approach (for example, the Downstairs/Upstairs Brain framework). Friends Chicago is already improving onboarding and training. The first months may be a window worth examining for early departures (a hypothesis to test).",
+   "controllability": "Program-controllable",
+   "phrases": [
+    "Nothing in training prepared me for my first home visit.",
+    "I wish I'd had more help with how to talk to caregivers about hard things.",
+    "Shadowing an experienced Mentor in my first month made all the difference.",
+    "I'd like more training on supporting a youth who is stuck in their Downstairs Brain."
+   ],
+   "keywords": "training, onboarding, orientation, prepared, shadowing, coaching, professional development, skills, new mentor, first month, first 90 days, trauma-informed, ongoing training, Downstairs Brain, Upstairs Brain, de-escalation",
+   "active": true
+  },
+  {
+   "id": "T07",
+   "name": "Compensation, Benefits & Career Growth",
+   "definition": "Mentor discusses pay, benefits, and room to grow within or beyond the Friends of the Children path.",
+   "context": "Friends of the Children moved mentorship out of the volunteer realm and into a profession with full-time salaried Mentors, so pay, benefits, and a visible career path are central to whether the profession is sustainable; they are likely compared with other human-services and school-based roles. Sub-type is noted per the Pay vs. Career Growth Sub-type rule; consider splitting this theme with real data.",
+   "controllability": "Partly controllable",
+   "phrases": [
+    "I love this work but I can't afford to stay on this salary.",
+    "I don't see where I go from here; there's no next step for a Mentor.",
+    "The benefits are better than my last job, and that keeps me here.",
+    "A school district offered me more money with summers off."
+   ],
+   "keywords": "salary, raise, profession, benefits, health insurance, afford, promotion, advancement, career path, next step, growth, title, job offer, student loans, pay [check context]",
+   "active": true
+  },
+  {
+   "id": "T08",
+   "name": "Youth, Family & Community Challenges (Trauma, Safety, Emotional Toll)",
+   "definition": "Mentor describes the emotional weight of youth and family circumstances, community violence, or personal safety concerns that come with the work.",
+   "context": "The program serves youth whose families may face gun violence, food or housing insecurity, criminal-justice involvement, or foster care, in communities such as Austin and North Lawndale, and Mentors stay close to those circumstances for 12.5 years. Safety disclosures also trigger escalation (see the Escalation Flags rule).",
+   "controllability": "Partly controllable",
+   "phrases": [
+    "When something happens to one of my youth, I take it home with me.",
+    "I worry about going to certain blocks for home visits.",
+    "When a family loses housing, I'm the one trying to hold it together with them.",
+    "Seeing a youth make progress despite everything is what gets me through the hard days."
+   ],
+   "keywords": "trauma, violence, shooting, safety, unsafe, scared, crisis, emotional, heavy, take it home, secondary trauma, vicarious, grief, housing, foster care, food insecurity, family situation, can't fix, neighborhood, worry, sleep",
+   "active": true
+  },
+  {
+   "id": "T09",
+   "name": "Mission, Values & Model Fit",
+   "definition": "Mentor reflects on whether the long-term, relationship-based model (12.5 years, 'No Matter What') and Friends of the Children values match what they want from the work.",
+   "context": "The organization's values (Put Children First, Build Relationships on Love, Commit to Empowerment, Pursue Goals Relentlessly, Unlock All Potential) are used to hire, coach, and manage; connection to the mission may be a key protective factor to test.",
+   "controllability": "Partly controllable",
+   "phrases": [
+    "I came here to be there for one youth for the long haul, and that's still what I believe in.",
+    "I didn't realize how much a 12-year commitment would ask of me personally.",
+    "I believe in the model, but day to day it doesn't always look like what we say we do.",
+    "Watching a youth I met at five grow up is why I'd never leave."
+   ],
+   "keywords": "mission, values, long-term, long haul, 12 years, 12.5, no matter what, relationship, commitment, believe in, purpose, calling, why I joined, the model, love, impact",
+   "active": true
+  },
+  {
+   "id": "T10",
+   "name": "Life Changes & Outside Opportunities",
+   "definition": "Mentor attributes leaving (or considering it) to circumstances outside the job, such as relocation, family needs, school, health, or an unrelated opportunity.",
+   "context": "Some departures are not preventable by the organization. Separating them keeps leadership from over-attributing exits to fixable program issues. Sensitive personal details are never used as flags or model features (see the Sensitive Personal Circumstances rule).",
+   "controllability": "External",
+   "phrases": [
+    "My partner got a job in another city and we're moving in the spring.",
+    "I'm starting a master's program in the fall.",
+    "I need to be closer to home because of a parent's health.",
+    "I'm not unhappy here; it's just the right time for a change."
+   ],
+   "keywords": "moving, relocate, relocation, partner's job, graduate school, master's, degree, family needs, caring for, new city, retire, personal reasons, right time",
+   "active": true
+  },
+  {
+   "id": "T11",
+   "name": "Team Culture & Belonging",
+   "definition": "Mentor describes connection to teammates, sense of belonging, and whether the team culture reflects Friends of the Children values internally.",
+   "context": "The values apply to employees as well as youth, and Mentors spend much of their time linking school, home, and community. The model gives each youth a 'Team of Support'; Mentors may need one too (hypothesis).",
+   "controllability": "Program-controllable",
+   "phrases": [
+    "My fellow Mentors are the only people who really get what this job is like.",
+    "I feel isolated; most of my day I'm out on my own.",
+    "I don't feel like my voice matters in team meetings.",
+    "Team events actually recharge me."
+   ],
+   "keywords": "team, teammates, colleagues, coworkers, peers, belong, isolated, lonely, culture, included, left out, my voice, morale, staff meeting, team events, camaraderie",
+   "active": true
+  },
+  {
+   "id": "T99",
+   "name": "Other / Emerging",
+   "definition": "Any meaningful reason or retention driver that does not clearly fit a theme above; used to discover themes the team did not anticipate.",
+   "context": "Keeps the codebook honest. Candidates to watch: organizational growth or leadership change, funding stability, logistics (commute, parking, transit). Review every cycle.",
+   "controllability": "Unknown",
+   "phrases": [
+    "I can't explain it; it just doesn't feel the same as it did a year ago.",
+    "With all the changes at the organization lately, I'm not sure where things are headed.",
+    "It's something about the way decisions get made around here.",
+    "Getting to the Clubhouse every day by transit is wearing me down."
+   ],
+   "keywords": "n/a - assigned by exception, not by keyword",
+   "active": true
+  }
+ ],
+ "rules": [
+  {
+   "name": "Unit of Coding",
+   "category": "How to tag",
+   "what": "Tag a segment (one answer or a short span about one idea), not the whole transcript.",
+   "example": "A Mentor's two-sentence answer about supervision is one segment."
+  },
+  {
+   "name": "Two Themes Maximum",
+   "category": "How to tag",
+   "what": "Primary = the cause the Mentor names. Add a secondary only if it is clearly stated.",
+   "example": "'I'm exhausted and my supervisor never checks in' = T02 primary, T04 secondary."
+  },
+  {
+   "name": "Valence on Every Tag",
+   "category": "How to tag",
+   "what": "Mark each tag Negative (pushes toward leaving), Positive (reason to stay), or Mixed/Neutral.",
+   "example": "'My supervisor checks in on me' = T04, Positive."
+  },
+  {
+   "name": "Keywords Suggest, Meaning Decides",
+   "category": "How to tag",
+   "what": "A keyword hit is a candidate only; the final tag depends on meaning in context.",
+   "example": "'Pay it forward' is not T07. 'Burnout' needs a named cause (T02 workload or T08 emotional toll)."
+  },
+  {
+   "name": "Verbatim Quote Required",
+   "category": "How to tag",
+   "what": "Every tag must include an exact quote from the transcript (about two sentences at most) and its timestamp. No quote, no tag.",
+   "example": "Supports human verification of every AI tag."
+  },
+  {
+   "name": "Transcript Only",
+   "category": "How to tag",
+   "what": "Do not infer emotion, honesty, or traits from voice, face, or tone.",
+   "example": "Tag what was said, not how it sounded."
+  },
+  {
+   "name": "Other / Emerging by Exception",
+   "category": "How to tag",
+   "what": "Use T99 only when nothing fits. Review T99 content each cycle and promote repeated, independent mentions to a new theme (prototype threshold: 3; adjust with real data).",
+   "example": "A Mentor cites a change in organizational direction not covered by T01-T11."
+  },
+  {
+   "name": "Portfolio Size vs. Schedule (T02 vs. T03)",
+   "category": "Telling similar themes apart",
+   "what": "T02 = how many youth, families, or tasks. T03 = hours, schedule, and boundaries. Code both only if the Mentor names both causes.",
+   "example": "'Too many youth' = T02. 'I'm always on call at night' = T03."
+  },
+  {
+   "name": "Workload vs. Emotional Toll (T02 vs. T08)",
+   "category": "Telling similar themes apart",
+   "what": "T02 = volume of work. T08 = the emotional weight of youth and family circumstances or personal safety.",
+   "example": "'Too many check-ins to keep up' = T02. 'I can't stop thinking about a youth's family' = T08."
+  },
+  {
+   "name": "Idle Time vs. Unclear Expectations (T01 vs. T05)",
+   "category": "Telling similar themes apart",
+   "what": "T01 = too little meaningful work or youth contact during school hours. T05 = unclear expectations or measures of success.",
+   "example": "'I wait around until school lets out' = T01. 'I don't know what a good week looks like' = T05."
+  },
+  {
+   "name": "Supervisor Relationship vs. Training Content (T04 vs. T06)",
+   "category": "Telling similar themes apart",
+   "what": "T04 = relationship, support, and feedback from the supervisor or program team. T06 = skills and learning content from onboarding or training.",
+   "example": "'My supervisor doesn't listen' = T04. 'Training didn't cover home visits' = T06."
+  },
+  {
+   "name": "Mission Fit vs. Outside Life Events (T09 vs. T10)",
+   "category": "Telling similar themes apart",
+   "what": "Use T10 only when the reason is external to the work. If an outside event is linked to doubts about the model, code T09 primary and T10 secondary.",
+   "example": "'We're moving for my partner's job' = T10. 'Moving made me realize I can't commit 12 years' = T09 primary."
+  },
+  {
+   "name": "Pay vs. Career Growth Sub-type (T07)",
+   "category": "Telling similar themes apart",
+   "what": "Tag T07 and note the sub-type: Pay/Benefits or Career Growth. Revisit splitting the theme once there is real data.",
+   "example": "'I can't afford to stay' = Pay/Benefits. 'There's no next step' = Career Growth."
+  },
+  {
+   "name": "Sensitive Personal Circumstances",
+   "category": "Protecting Mentors",
+   "what": "Pregnancy, health, family or caregiving status, and similar details may be coded T10 for aggregate reporting only. They are never used as individual flags or as model features.",
+   "example": "A Mentor mentions a parent's illness: counted in T10 totals, never flagged on that Mentor."
+  },
+  {
+   "name": "Escalation Flags (Not Themes)",
+   "category": "Protecting Mentors",
+   "what": "Route immediately to a designated human, outside the dashboard: harassment or discrimination, threats to personal safety, any child-welfare concern, self-harm or crisis. Friends Chicago must define the exact procedure and any mandated-reporter obligations.",
+   "example": "A Mentor describes a youth being unsafe at home: escalated per Friends Chicago policy, not tagged and queued."
+  },
+  {
+   "name": "Support, Not Evaluation",
+   "category": "Protecting Mentors",
+   "what": "Theme results and risk indicators trigger a supportive check-in. They never feed performance reviews or hiring decisions. (Proposed policy for Friends Chicago approval.)",
+   "example": "A flagged Mentor is offered a conversation about supervision or portfolio size."
+  }
+ ],
+ "settings": {
+  "consent_text": "This is a short check-in about your work as a Professional Mentor.\n\n- **Your answers are confidential, not anonymous.** A designated support person can see your individual answers. Your supervisor cannot, and leadership sees only group results.\n- **Every question can be skipped.**\n- **Audio is used to make a written transcript and is then deleted.**\n- **Your answers are used to offer support, never to evaluate you.**\n- If you describe a safety concern, harassment, or a concern about a child's welfare, it will be passed to a designated person so help can follow.\n\n*Draft wording. Friends of the Children - Chicago must review and approve this before real use.*",
+  "thanks_text": "Your answers were saved. They help Friends of the Children understand what supports Mentors and what gets in the way.\n\nAfter each quarter, leadership will share what changed because of what Mentors said. If you raised a safety concern, a designated person will follow up with you.",
+  "current_quarter": "1",
+  "min_group": "5",
+  "app_title": "Mentor check-in"
+ }
+}
