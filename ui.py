@@ -87,6 +87,12 @@ blockquote p {{ color:{CHARCOAL}; font-size:1.05rem; }}
 .home-name {{ font-family:{FONT_COND}; text-transform:uppercase; letter-spacing:.03em; font-weight:700; font-size:1.2rem; color:{CHARCOAL}; }}
 .home-desc {{ color:{GREY}; font-size:.95rem; margin:2px 0 6px 0; }}
 .home-icon.later, .home-name.later, .home-desc.later {{ opacity:.45; }}
+/* whole card is the link: the link's invisible overlay covers the card, and the card lights up on hover */
+[class*="st-key-homecard_"] {{ position:relative; cursor:pointer; transition:border-color .15s, box-shadow .15s, background-color .15s; }}
+[class*="st-key-homecard_"]:hover {{ border-color:{BLUE} !important; background-color:#F5FAFE; box-shadow:0 3px 12px rgba(26,116,184,.20); }}
+[class*="st-key-homecard_"] .stElementContainer:has(a[data-testid="stPageLink-NavLink"]) {{ position:static !important; }}
+[class*="st-key-homecard_"] a[data-testid="stPageLink-NavLink"]::after {{ content:""; position:absolute; top:0; left:0; right:0; bottom:0; z-index:5; }}
+[class*="st-key-homecard_"] a[data-testid="stPageLink-NavLink"] {{ color:{BLUE}; font-weight:600; }}
 
 /* login hero */
 .hero {{ position:relative; min-height:430px; background:{BLUE}; clip-path:polygon(14% 0, 100% 0, 100% 100%, 0 100%); display:flex; align-items:flex-end; justify-content:flex-end; padding:0; }}

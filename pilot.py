@@ -35,6 +35,8 @@ def live_pilot():
         sess["minutes"] = (pd.to_datetime(sess["last_ts"]) - pd.to_datetime(sess["started"])).dt.total_seconds() / 60
         sess["completed"] = sess["completed"].astype(bool)
         sess["mentor"] = sess["participant_code"]
+        # a Mentor who submits again in the same season still counts once (a finished check-in wins, then the latest)
+        sess = sess.sort_values(["completed", "started"], ascending=[False, False]).drop_duplicates(["participant_code", "season", "session_type"], keep="first")
     rows = db.fetch_responses()
     resp = pd.DataFrame(rows)
     pq = db.get_published("questions")[1]
@@ -76,53 +78,60 @@ def live_pilot():
 
 
 def example_pilot():
-    rng = np.random.default_rng(7)
     d = dash.demo_checkins()
-    first = d[d["wave"] == "Summer 2025"]
-    mentors = sorted(first["mentor"].unique())[:28]
-    season = "Summer 2025"
+    waves = seasons.ordered(list(d["wave"].unique()))          # every synthetic season, past and current
     pq = db.get_published("questions")[1]
     qtext = {q["id"]: q["text"] for q in pq}
     qblock = {q["id"]: q["block"] for q in pq}
     qorder = {q["id"]: i for i, q in enumerate(pq)}
     n_q = 18
-    sess = []
-    for i, m in enumerate(mentors):
-        done = i < 24
-        sess.append(dict(session_id=f"ex{i}", participant_code=m, mentor=m, season=season, session_type="Quarterly", n_questions=n_q,
-                         last_idx=n_q if done else int(rng.integers(4, 12)), completed=done,
-                         minutes=float(np.clip(rng.normal(7.2, 1.9), 3.2, 13)) if done else float(abs(rng.normal(3.5, 1.2)))))
-    sess = pd.DataFrame(sess)
     skip = {"C01": .02, "C02": .03, "C03": .03, "C04": .05, "C05": .12, "C06": .05, "C07": .04, "C08": .06, "C09": .09, "R01": .04, "R02": .05, "S01": .17,
             "P01": .02, "P02": .03, "P03": .07, "P04": .29, "Z01": .35, "O01": .58}
-    qs = []
-    for j, (q, rate) in enumerate(skip.items()):
-        reached = 28 - min(j // 3, 4)
-        qs.append(dict(season=season, qid=q, reached=reached, skipped=int(round(reached * rate))))
-    ratings = []
-    for m in mentors[:24]:
-        row = first[first["mentor"] == m].iloc[0]
-        for c in CORE:
-            if not pd.isna(row[c]):
-                ratings.append(dict(mentor=m, season=season, qid=c, value=float(row[c])))
-        for qid, p in (("P01", [.0, .02, .08, .35, .55]), ("P02", [.02, .06, .22, .40, .30]), ("P03", [.04, .10, .30, .36, .20])):
-            ratings.append(dict(mentor=m, season=season, qid=qid, value=float(rng.choice([1, 2, 3, 4, 5], p=p))))
-    tg = dash.demo_tags()
-    tg = tg[(tg["wave"] == season) & tg["mentor"].isin(mentors) & (tg["quote"] != "")].head(26)
-    answers = []
-    for i, r in enumerate(tg.itertuples(index=False)):
-        answers.append(dict(id=1000 + i, mentor=r.mentor, season=season, qid=r.question, qtext=qtext.get(r.question, r.question), text=r.quote, audio=bool(i % 2 == 0),
-                            reviewed=i % 3 != 0, starred=i in (1, 4, 9), excerpt="", themes=dash.THEME_SHORT.get(r.theme, r.theme), escalated=False))
-    for i, text in enumerate(["The record button was easy to find.", "I wasn't sure whether my supervisor could hear this.", "I would rather type than speak some days.",
-                              "It took longer than I expected.", "I liked that I could skip questions.", "The wording of the question about time when youth are away confused me."]):
-        answers.append(dict(id=2000 + i, mentor=mentors[i], season=season, qid="P04", qtext=qtext.get("P04", "What would make this check-in better?"), text=text, audio=False,
-                            reviewed=False, starred=False, excerpt="", themes="About the check-in", escalated=False))
+    comments = ["The record button was easy to find.", "I wasn't sure whether my supervisor could hear this.", "I would rather type than speak some days.",
+                "It took longer than I expected.", "I liked that I could skip questions.", "The wording of the question about time when youth are away confused me."]
+    tg_all = dash.demo_tags()
+    sess, qs, ratings, answers = [], [], [], []
+    for si, season in enumerate(waves):
+        rng = np.random.default_rng(7 + si)
+        first = d[d["wave"] == season]
+        mentors = sorted(first["mentor"].unique())[:28]
+        n = len(mentors)
+        done_n = min(n, [24, 25, 25, 26, 26, 27][si % 6])
+        for i, m in enumerate(mentors):
+            done = i < done_n
+            sess.append(dict(session_id=f"ex{si}_{i}", participant_code=m, mentor=m, season=season, session_type="Quarterly", n_questions=n_q,
+                             last_idx=n_q if done else int(rng.integers(4, 12)), completed=done,
+                             minutes=float(np.clip(rng.normal(7.4 - 0.15 * si, 1.9), 3.2, 13)) if done else float(abs(rng.normal(3.5, 1.2)))))
+        for j_, (q, rate) in enumerate(skip.items()):
+            reached = n - min(j_ // 3, 4)
+            qs.append(dict(season=season, qid=q, reached=reached, skipped=int(round(reached * rate))))
+        for m in mentors[:done_n]:
+            row = first[first["mentor"] == m].iloc[0]
+            for c in CORE:
+                if not pd.isna(row[c]):
+                    ratings.append(dict(mentor=m, season=season, qid=c, value=float(row[c])))
+            for qid, p in (("P01", [.0, .02, .08, .35, .55]), ("P02", [.02, .06, .22, .40, .30]), ("P03", [.04, .10, .30, .36, .20])):
+                p = np.array(p, dtype=float)
+                if qid != "P01":                                   # trust and ease creep up a little each season
+                    p[2] -= 0.015 * si
+                    p[4] += 0.015 * si
+                ratings.append(dict(mentor=m, season=season, qid=qid, value=float(rng.choice([1, 2, 3, 4, 5], p=p / p.sum()))))
+        tg = tg_all[(tg_all["wave"] == season) & tg_all["mentor"].isin(mentors) & (tg_all["quote"] != "")].head(26)
+        for i, r in enumerate(tg.itertuples(index=False)):
+            answers.append(dict(id=1000 + si * 100 + i, mentor=r.mentor, season=season, qid=r.question, qtext=qtext.get(r.question, r.question), text=r.quote, audio=bool(i % 2 == 0),
+                                reviewed=i % 3 != 0, starred=i in (1, 4, 9), excerpt="", themes=dash.THEME_SHORT.get(r.theme, r.theme), escalated=False))
+        for i, text in enumerate(comments[:min(len(comments), n)]):
+            answers.append(dict(id=2000 + si * 10 + i, mentor=mentors[i], season=season, qid="P04", qtext=qtext.get("P04", "What would make this check-in better?"), text=text, audio=False,
+                                reviewed=False, starred=False, excerpt="", themes="About the check-in", escalated=False))
+    first_season = waves[0] if waves else "Summer 2025"
+    spread = waves[1:4] + [first_season] * 3                          # spread the example actions over the first seasons
     acts = pd.DataFrame([
-        dict(id=1, ts="", season=season, raised="Portfolio gets overwhelming when a youth is in crisis", action="Set up a backup Mentor rota for crisis weeks", status="Done", owner="Program Director", result="Helped", note="", by_user=""),
-        dict(id=2, ts="", season=season, raised="Time when youth are away feels aimless", action="Pilot a shared planning block on Tuesdays", status="In progress", owner="Program team", result="", note="", by_user=""),
-        dict(id=3, ts="", season=season, raised="Training did not cover home visits", action="Add shadowing to onboarding", status="Planned", owner="HR Specialist", result="", note="", by_user=""),
+        dict(id=1, ts="", season=first_season, raised="Portfolio gets overwhelming when a youth is in crisis", action="Set up a backup Mentor rota for crisis weeks", status="Done", owner="Program Director", result="Helped", note="", by_user=""),
+        dict(id=2, ts="", season=spread[0], raised="Time when youth are away feels aimless", action="Pilot a shared planning block on Tuesdays", status="Done", owner="Program team", result="Unsure", note="", by_user=""),
+        dict(id=3, ts="", season=spread[1], raised="Training did not cover home visits", action="Add shadowing to onboarding", status="In progress", owner="HR Specialist", result="", note="", by_user=""),
+        dict(id=4, ts="", season=spread[2], raised="The check-in felt long", action="Review optional questions with FOTC leadership", status="Planned", owner="Program team", result="", note="", by_user=""),
     ])
-    return dict(example=True, invited=30, sessions=sess, qstats=pd.DataFrame(qs), ratings=pd.DataFrame(ratings), answers=pd.DataFrame(answers), actions=acts,
+    return dict(example=True, invited=30, sessions=pd.DataFrame(sess), qstats=pd.DataFrame(qs), ratings=pd.DataFrame(ratings), answers=pd.DataFrame(answers), actions=acts,
                 qtext=qtext, qblock=qblock, qorder=qorder)
 
 
@@ -141,7 +150,7 @@ def page_pilot():
     data = example_pilot() if choice == SRC[1] else live_pilot()
     example = data["example"]
     if example:
-        st.warning("Example data: a made-up pilot of 28 Mentors, with illustrative answers. Nobody here is real, and you cannot save changes in this view.")
+        st.warning("Example data: a made-up pilot of up to 28 Mentors in each of six seasons, with illustrative answers. Nobody here is real, and you cannot save changes in this view.")
     sess, ratings, answers, acts = data["sessions"], data["ratings"], data["answers"], data["actions"]
     all_seasons = seasons.ordered(list(sess["season"]) + list(ratings["season"]) + list(answers["season"]) + list(acts["season"].dropna()))
     cur_label = seasons.current_label()

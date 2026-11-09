@@ -124,7 +124,7 @@ def page_home(pages, role):
         cols = st.columns(4)  # same card width in every section
         for col, (key, icon, name, desc, _roles) in zip(cols, mine):
             later = stage == "Pilot year" and key in LATER
-            with col.container(border=True, height=205):
+            with col.container(border=True, height=205, key=f"homecard_{key}"):
                 st.markdown(f"<div class='home-icon{' later' if later else ''}'>{icon}</div>", unsafe_allow_html=True)
                 st.markdown(f"<div class='home-name{' later' if later else ''}'>{name}</div>", unsafe_allow_html=True)
                 if later:

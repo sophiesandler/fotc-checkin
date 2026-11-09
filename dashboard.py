@@ -131,7 +131,8 @@ def pick_wave(waves, key):
     if len(waves) < 2:
         st.caption(f"Season shown: {waves[0]}")
         return waves[0]
-    return st.select_slider("Season", options=waves, value=waves[-1], key=key)
+    # a dropdown, like the other filters beside it; it opens on the latest season
+    return st.selectbox("Season", waves, index=len(waves) - 1, key=key)
 
 
 def order_waves(df):

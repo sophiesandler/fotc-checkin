@@ -38,11 +38,17 @@ def page_checkin():
         minutes = max(1, round(_estimate_minutes(session)))
         before = [s for s in db.get_sessions() if s["participant_code"] == user["username"] and s["season"] == season and s["session_type"] == stype and s["completed"]]
         allow_repeat = db.get_setting("allow_repeat", "No") == "Yes"
-        if before and not allow_repeat:
+        repeat_ok = bool(ci.get("repeat_ok"))
+        if before and not allow_repeat and not repeat_ok:
             st.success(f"You have already completed this season's check-in ({season}). Thank you! There is nothing more to do until the next season opens.")
+            if st.button("Submit another check-in"):
+                st.session_state.ci = {"phase": "consent", "repeat_ok": True}
+                st.session_state.pop("ci_agree", None)
+                st.rerun()
             return
         if before:
-            st.info(f"You have already completed the {season} check-in. Repeats are turned on for practice, so you can take it again.")
+            st.info(f"You have already completed the {season} check-in. This one will be saved as an additional check-in." if (repeat_ok and not allow_repeat)
+                    else f"You have already completed the {season} check-in. Repeats are turned on for practice, so you can take it again.")
         st.markdown(f"**{ct.type_label(stype)} for {season}:** {len(session)} questions, about {minutes} minute{'s' if minutes != 1 else ''}. You can skip any question.")
         st.markdown(db.get_setting("consent_text"))
         agreed = st.checkbox("I understand and want to continue", key="ci_agree")
@@ -64,8 +70,8 @@ def page_checkin():
             st.subheader("What changed because of what Mentors said")
             for a in done_:
                 st.markdown(f"- **You raised:** {a['raised']}  \n  **We did:** {a['action']}")
-        if db.get_setting("allow_repeat", "No") == "Yes" and st.button("Start over (practice)"):
-            st.session_state.ci = {"phase": "consent"}
+        if st.button("Submit another check-in"):
+            st.session_state.ci = {"phase": "consent", "repeat_ok": True}
             st.session_state.pop("ci_agree", None)
             st.rerun()
         return
