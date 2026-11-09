@@ -170,6 +170,16 @@ def add_user(username, display_name, role, password):
                                        active=True, session_type="Quarterly", first_year=False, created=now()))
 
 
+def rename_user(uid, new_username):
+    """Change a sign-in name and carry the person's past check-ins and support notes over to it."""
+    with engine().begin() as c:
+        old = c.execute(select(users.c.username).where(users.c.id == uid)).scalar()
+        c.execute(update(users).where(users.c.id == uid).values(username=new_username))
+        c.execute(update(responses).where(responses.c.participant_code == old).values(participant_code=new_username))
+        c.execute(update(sessions).where(sessions.c.participant_code == old).values(participant_code=new_username))
+        c.execute(update(support).where(support.c.mentor == old).values(mentor=new_username))
+
+
 def update_user(uid, **fields):
     if "password" in fields:
         pw = fields.pop("password")

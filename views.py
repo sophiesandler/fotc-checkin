@@ -483,7 +483,7 @@ def page_users():
     _flash()
     st.caption("Add Mentors and staff. Give each Mentor a code and an initial password; ask them to keep it private.")
     us = db.list_users()
-    ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: pick a person below to change their check-in type, first-year status, active status, or password.", level=3)
+    ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: pick a person under Change a person to edit their name, sign-in name, role, check-in type, first-year status, active status, or password.", level=3)
     st.dataframe(pd.DataFrame(us)[["username", "display_name", "role", "active", "session_type", "first_year"]]
                  .rename(columns={"username": "Sign-in name", "display_name": "Name", "role": "Role", "active": "Active",
                                   "session_type": "Check-in type", "first_year": "First year"}).assign(**{"Check-in type": lambda d: d["Check-in type"].map(ct.type_label)}), hide_index=True, width="stretch")
@@ -505,27 +505,51 @@ def page_users():
                 db.add_user(un.strip(), dn.strip() or un.strip(), rl, pw)
                 db.log(me["username"], "added user", f"{un.strip()} ({rl})")
                 st.session_state.flash = f"Added {un.strip()}."; st.rerun()
-    ui.section("Change a person", "Pick a person, change their settings, and save.", level=3)
+    ui.section("Change a person", "Pick a person, change their name, sign-in name, role, or settings, and save.", level=3)
+    if "_u_sel_next" in st.session_state:                       # keep the same person selected after a rename
+        st.session_state["u_sel"] = st.session_state.pop("_u_sel_next")
     sel = st.selectbox("Person", [u["username"] for u in us], key="u_sel")
     u = next(x for x in us if x["username"] == sel)
+    roles = ["mentor", "leader", "admin"]
+    n1, n2, n3 = st.columns(3)
+    new_dn = n1.text_input("Name shown in the app", u["display_name"] or "", key=f"dn_{sel}")
+    new_un = n2.text_input("Sign-in name or Mentor code (no spaces)", u["username"], key=f"un_{sel}",
+                           help="Changing it also moves this person's past check-ins to the new name.")
+    new_rl = n3.selectbox("Role", roles, index=roles.index(u["role"]) if u["role"] in roles else 0, key=f"rl_{sel}",
+                          help="mentor: takes check-ins. leader: sees group results only. admin: sees individuals and edits content.")
     c1, c2, c3 = st.columns(3)
     stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], index=0 if (u["session_type"] or "Quarterly") == "Quarterly" else 1, key=f"st_{sel}", format_func=ct.type_label)
     fy = c2.checkbox("First-year Mentor", bool(u["first_year"]), key=f"fy_{sel}")
     act = c3.checkbox("Active", bool(u["active"]), key=f"ac_{sel}")
     newpw = st.text_input("New password (leave blank to keep the current one)", type="password", key=f"pw_{sel}")
     if st.button("Save changes to this person"):
-        admins = [x for x in us if x["role"] == "admin" and x["active"] and x["username"] != sel]
-        if u["role"] == "admin" and not act and not admins:
-            st.error("You cannot deactivate the only active admin.")
+        other_admins = [x for x in us if x["role"] == "admin" and x["active"] and x["username"] != sel]
+        un_clean = new_un.strip()
+        if not un_clean:
+            st.error("Enter a sign-in name.")
+        elif " " in un_clean:
+            st.error("The sign-in name can't contain spaces.")
+        elif un_clean != u["username"] and db.get_user(un_clean):
+            st.error("That sign-in name already exists.")
+        elif sel == me["username"] and un_clean != u["username"]:
+            st.error("You can't change your own sign-in name while you are signed in. Ask another admin to do it.")
+        elif sel == me["username"] and new_rl != u["role"]:
+            st.error("You can't change your own role. Ask another admin to do it.")
+        elif u["role"] == "admin" and (new_rl != "admin" or not act) and not other_admins:
+            st.error("You cannot remove or deactivate the only active admin.")
         elif newpw and len(newpw) < 8:
             st.error("Passwords need at least 8 characters.")
         else:
-            fields = dict(session_type=stype, first_year=fy, active=act)
+            fields = dict(display_name=new_dn.strip() or un_clean, role=new_rl, session_type=stype, first_year=fy, active=act)
             if newpw:
                 fields["password"] = newpw
             db.update_user(u["id"], **fields)
-            db.log(me["username"], "updated user", sel)
-            st.session_state.flash = f"Saved changes for {sel}."; st.rerun()
+            renamed = un_clean != u["username"]
+            if renamed:
+                db.rename_user(u["id"], un_clean)
+                st.session_state["_u_sel_next"] = un_clean
+            db.log(me["username"], "updated user", f"{sel}" + (f", now {un_clean}" if renamed else "") + (f", role {u['role']} to {new_rl}" if new_rl != u["role"] else ""))
+            st.session_state.flash = f"Saved changes for {un_clean}."; st.rerun()
 
 
 def page_settings():
