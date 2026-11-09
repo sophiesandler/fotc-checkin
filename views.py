@@ -493,8 +493,12 @@ def page_users():
         rl = st.selectbox("Role", ["mentor", "leader", "admin"], key="u_role", help="mentor: takes check-ins. leader: sees group results only. admin: sees individuals and edits content.")
         pw = st.text_input("Starting password (at least 8 characters)", type="password", key="u_pw")
         if st.button("Add person"):
-            if not un.strip() or " " in un.strip() or len(pw) < 8:
-                st.error("Use a sign-in name without spaces and a password of at least 8 characters.")
+            if not un.strip():
+                st.error("Enter a sign-in name.")
+            elif " " in un.strip():
+                st.error("The sign-in name can't contain spaces.")
+            elif len(pw) < 8:
+                st.error(f"The starting password needs at least 8 characters. This one has {len(pw)}.")
             elif db.get_user(un.strip()):
                 st.error("That sign-in name already exists.")
             else:
