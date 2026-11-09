@@ -483,29 +483,18 @@ def page_users():
     _flash()
     st.caption("Add Mentors and staff. Give each Mentor a code and an initial password; ask them to keep it private.")
     us = db.list_users()
-    ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: pick a person under Change a person to edit their name, sign-in name, role, check-in type, first-year status, active status, or password.", level=3)
-    st.dataframe(pd.DataFrame(us)[["username", "display_name", "role", "active", "session_type", "first_year"]]
-                 .rename(columns={"username": "Sign-in name", "display_name": "Name", "role": "Role", "active": "Active",
-                                  "session_type": "Check-in type", "first_year": "First year"}).assign(**{"Check-in type": lambda d: d["Check-in type"].map(ct.type_label)}), hide_index=True, width="stretch")
-    with st.expander("Add a person"):
-        un = st.text_input("Sign-in name or Mentor code (no spaces)", key="u_name")
-        dn = st.text_input("Name shown in the app", key="u_disp")
-        rl = st.selectbox("Role", ["mentor", "leader", "admin"], key="u_role", help="mentor: takes check-ins. leader: sees group results only. admin: sees individuals and edits content.")
-        pw = st.text_input("Starting password (at least 8 characters)", type="password", key="u_pw")
-        if st.button("Add person"):
-            if not un.strip():
-                st.error("Enter a sign-in name.")
-            elif " " in un.strip():
-                st.error("The sign-in name can't contain spaces.")
-            elif len(pw) < 8:
-                st.error(f"The starting password needs at least 8 characters. This one has {len(pw)}.")
-            elif db.get_user(un.strip()):
-                st.error("That sign-in name already exists.")
-            else:
-                db.add_user(un.strip(), dn.strip() or un.strip(), rl, pw)
-                db.log(me["username"], "added user", f"{un.strip()} ({rl})")
-                st.session_state.flash = f"Added {un.strip()}."; st.rerun()
-    ui.section("Change a person", "Pick a person, change their name, sign-in name, role, or settings, and save.", level=3)
+    ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: click a person's row to edit their name, sign-in name, role, check-in type, first-year status, active status, or password.", level=3)
+    shown = (pd.DataFrame(us)[["username", "display_name", "role", "active", "session_type", "first_year"]]
+             .rename(columns={"username": "Sign-in name", "display_name": "Name", "role": "Role", "active": "Active",
+                              "session_type": "Check-in type", "first_year": "First year"})
+             .assign(**{"Check-in type": lambda d: d["Check-in type"].map(ct.type_label)}))
+    ev = st.dataframe(shown, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key="people_tbl")
+    st.caption("Click a row to edit that person: their name, sign-in name, role, or settings.")
+    rows_sel = list(ev.selection.rows) if ev is not None and ev.selection is not None else []
+    if rows_sel and rows_sel != st.session_state.get("_people_last_row"):
+        st.session_state["u_sel"] = us[rows_sel[0]]["username"]      # clicking a row picks that person in the editor below
+    st.session_state["_people_last_row"] = rows_sel
+    ui.section("Edit a person", "Click a row above, or pick a person here. Change their name, sign-in name, role, or settings, then save.", level=3)
     if "_u_sel_next" in st.session_state:                       # keep the same person selected after a rename
         st.session_state["u_sel"] = st.session_state.pop("_u_sel_next")
     sel = st.selectbox("Person", [u["username"] for u in us], key="u_sel")
@@ -550,6 +539,26 @@ def page_users():
                 st.session_state["_u_sel_next"] = un_clean
             db.log(me["username"], "updated user", f"{sel}" + (f", now {un_clean}" if renamed else "") + (f", role {u['role']} to {new_rl}" if new_rl != u["role"] else ""))
             st.session_state.flash = f"Saved changes for {un_clean}."; st.rerun()
+
+
+    with st.expander("Add a person"):
+        un = st.text_input("Sign-in name or Mentor code (no spaces)", key="u_name")
+        dn = st.text_input("Name shown in the app", key="u_disp")
+        rl = st.selectbox("Role", ["mentor", "leader", "admin"], key="u_role", help="mentor: takes check-ins. leader: sees group results only. admin: sees individuals and edits content.")
+        pw = st.text_input("Starting password (at least 8 characters)", type="password", key="u_pw")
+        if st.button("Add person"):
+            if not un.strip():
+                st.error("Enter a sign-in name.")
+            elif " " in un.strip():
+                st.error("The sign-in name can't contain spaces.")
+            elif len(pw) < 8:
+                st.error(f"The starting password needs at least 8 characters. This one has {len(pw)}.")
+            elif db.get_user(un.strip()):
+                st.error("That sign-in name already exists.")
+            else:
+                db.add_user(un.strip(), dn.strip() or un.strip(), rl, pw)
+                db.log(me["username"], "added user", f"{un.strip()} ({rl})")
+                st.session_state.flash = f"Added {un.strip()}."; st.rerun()
 
 
 def page_settings():
