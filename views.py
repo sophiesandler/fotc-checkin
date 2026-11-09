@@ -477,70 +477,121 @@ def page_coding_key():
 
 
 # =====================================================================  USERS, SETTINGS, AUDIT, GUIDE
+def _plan_people_changes(us, edited, me):
+    """Compare the edited table with what is saved. Returns (errors, changes). Nothing is saved here."""
+    inv = {ct.type_label(t): t for t in ("Quarterly", "Exit")}
+    errors, changes, news, flagged = [], [], [], set()
+    taken = {x["username"] for x in us}
+    for i, old in enumerate(us):
+        row = edited.iloc[i]
+        un = str(row["Sign-in name"] or "").strip()
+        new = dict(username=un, display_name=str(row["Name"] or "").strip() or un, role=row["Role"], active=bool(row["Active"]),
+                   first_year=bool(row["First year"]), session_type=inv.get(row["Check-in type"], old["session_type"] or "Quarterly"))
+        cur = dict(username=old["username"], display_name=old["display_name"] or old["username"], role=old["role"], active=bool(old["active"]),
+                   first_year=bool(old["first_year"]), session_type=old["session_type"] or "Quarterly")
+        news.append(new)
+        if new == cur:
+            continue
+        who = old["username"]
+        if not un:
+            errors.append(f"{who}: enter a sign-in name."); continue
+        if " " in un:
+            errors.append(f"{who}: the sign-in name can't contain spaces."); continue
+        if un != who and un in taken:
+            errors.append(f"{un}: that sign-in name already exists."); flagged.add(un); continue
+        if who == me["username"]:
+            if un != who:
+                errors.append("You can't change your own sign-in name while you are signed in. Ask another admin.")
+            if new["role"] != old["role"]:
+                errors.append("You can't change your own role. Ask another admin.")
+            if not new["active"]:
+                errors.append("You can't deactivate your own account.")
+        changes.append((old, new))
+    names = [n["username"] for n in news]
+    for n in sorted({x for x in names if names.count(x) > 1} - flagged):
+        errors.append(f"{n}: two people would have this sign-in name.")
+    if not any(n["role"] == "admin" and n["active"] for n in news):
+        errors.append("At least one active admin is needed.")
+    return list(dict.fromkeys(errors)), changes
+
+
+def _apply_people_changes(changes, me):
+    for old, new in changes:
+        db.update_user(old["id"], **{k: new[k] for k in ("display_name", "role", "active", "first_year", "session_type")})
+        renamed = new["username"] != old["username"]
+        if renamed:
+            db.rename_user(old["id"], new["username"])
+        what = [old["username"] + (f" now {new['username']}" if renamed else "")]
+        if new["role"] != old["role"]:
+            what.append(f"role {old['role']} to {new['role']}")
+        db.log(me["username"], "updated user", ", ".join(what))
+
+
 def page_users():
     me = require("admin")
     st.title("People")
     _flash()
     st.caption("Add Mentors and staff. Give each Mentor a code and an initial password; ask them to keep it private.")
     us = db.list_users()
-    ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: click a person's row to edit their name, sign-in name, role, check-in type, first-year status, active status, or password.", level=3)
+    editing = st.session_state.get("people_editing", False)
+    head, btns = st.columns([5, 2], vertical_alignment="center")
+    with head:
+        ui.section("Everyone with an account", "Purpose: see who can sign in and how. How to use: press Edit, change anything in the table, then press Save. Passwords are reset below.", level=3)
     shown = (pd.DataFrame(us)[["username", "display_name", "role", "active", "session_type", "first_year"]]
              .rename(columns={"username": "Sign-in name", "display_name": "Name", "role": "Role", "active": "Active",
                               "session_type": "Check-in type", "first_year": "First year"})
-             .assign(**{"Check-in type": lambda d: d["Check-in type"].map(ct.type_label)}))
-    ev = st.dataframe(shown, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key="people_tbl")
-    st.caption("Click a row to edit that person: their name, sign-in name, role, or settings.")
-    rows_sel = list(ev.selection.rows) if ev is not None and ev.selection is not None else []
-    if rows_sel and rows_sel != st.session_state.get("_people_last_row"):
-        st.session_state["u_sel"] = us[rows_sel[0]]["username"]      # clicking a row picks that person in the editor below
-    st.session_state["_people_last_row"] = rows_sel
-    ui.section("Edit a person", "Click a row above, or pick a person here. Change their name, sign-in name, role, or settings, then save.", level=3)
-    if "_u_sel_next" in st.session_state:                       # keep the same person selected after a rename
-        st.session_state["u_sel"] = st.session_state.pop("_u_sel_next")
-    sel = st.selectbox("Person", [u["username"] for u in us], key="u_sel")
-    u = next(x for x in us if x["username"] == sel)
-    roles = ["mentor", "leader", "admin"]
-    n1, n2, n3 = st.columns(3)
-    new_dn = n1.text_input("Name shown in the app", u["display_name"] or "", key=f"dn_{sel}")
-    new_un = n2.text_input("Sign-in name or Mentor code (no spaces)", u["username"], key=f"un_{sel}",
-                           help="Changing it also moves this person's past check-ins to the new name.")
-    new_rl = n3.selectbox("Role", roles, index=roles.index(u["role"]) if u["role"] in roles else 0, key=f"rl_{sel}",
-                          help="mentor: takes check-ins. leader: sees group results only. admin: sees individuals and edits content.")
-    c1, c2, c3 = st.columns(3)
-    stype = c1.selectbox("Check-in type", ["Quarterly", "Exit"], index=0 if (u["session_type"] or "Quarterly") == "Quarterly" else 1, key=f"st_{sel}", format_func=ct.type_label)
-    fy = c2.checkbox("First-year Mentor", bool(u["first_year"]), key=f"fy_{sel}")
-    act = c3.checkbox("Active", bool(u["active"]), key=f"ac_{sel}")
-    newpw = st.text_input("New password (leave blank to keep the current one)", type="password", key=f"pw_{sel}")
-    if st.button("Save changes to this person"):
-        other_admins = [x for x in us if x["role"] == "admin" and x["active"] and x["username"] != sel]
-        un_clean = new_un.strip()
-        if not un_clean:
-            st.error("Enter a sign-in name.")
-        elif " " in un_clean:
-            st.error("The sign-in name can't contain spaces.")
-        elif un_clean != u["username"] and db.get_user(un_clean):
-            st.error("That sign-in name already exists.")
-        elif sel == me["username"] and un_clean != u["username"]:
-            st.error("You can't change your own sign-in name while you are signed in. Ask another admin to do it.")
-        elif sel == me["username"] and new_rl != u["role"]:
-            st.error("You can't change your own role. Ask another admin to do it.")
-        elif u["role"] == "admin" and (new_rl != "admin" or not act) and not other_admins:
-            st.error("You cannot remove or deactivate the only active admin.")
-        elif newpw and len(newpw) < 8:
-            st.error("Passwords need at least 8 characters.")
+             .assign(**{"Check-in type": lambda d: d["Check-in type"].map(ct.type_label)})[["Sign-in name", "Name", "Role", "Active", "Check-in type", "First year"]])
+    shown["Name"] = shown["Name"].fillna("")
+    if editing:
+        ver = st.session_state.get("people_ver", 0)
+        edited = st.data_editor(shown, hide_index=True, width="stretch", num_rows="fixed", key=f"people_editor_{ver}", column_config={
+            "Sign-in name": st.column_config.TextColumn(required=True, help="No spaces. Changing it also moves this person's past check-ins to the new name."),
+            "Name": st.column_config.TextColumn(help="The name shown in the app."),
+            "Role": st.column_config.SelectboxColumn(options=["mentor", "leader", "admin"], required=True,
+                                                     help="mentor: takes check-ins. leader: sees group results only. admin: sees individuals and edits content."),
+            "Active": st.column_config.CheckboxColumn(),
+            "Check-in type": st.column_config.SelectboxColumn(options=[ct.type_label("Quarterly"), ct.type_label("Exit")], required=True),
+            "First year": st.column_config.CheckboxColumn()})
+        st.caption("Double-click a cell to change it. Nothing is saved until you press Save.")
+    else:
+        st.dataframe(shown, hide_index=True, width="stretch")
+    save = cancel = start = False
+    with btns:
+        if editing:
+            b1, b2 = st.columns(2)
+            save = b1.button("Save", type="primary", key="people_save", width="stretch")
+            cancel = b2.button("Cancel", key="people_cancel", width="stretch")
         else:
-            fields = dict(display_name=new_dn.strip() or un_clean, role=new_rl, session_type=stype, first_year=fy, active=act)
-            if newpw:
-                fields["password"] = newpw
-            db.update_user(u["id"], **fields)
-            renamed = un_clean != u["username"]
-            if renamed:
-                db.rename_user(u["id"], un_clean)
-                st.session_state["_u_sel_next"] = un_clean
-            db.log(me["username"], "updated user", f"{sel}" + (f", now {un_clean}" if renamed else "") + (f", role {u['role']} to {new_rl}" if new_rl != u["role"] else ""))
-            st.session_state.flash = f"Saved changes for {un_clean}."; st.rerun()
+            start = st.button("Edit", icon=":material/edit:", key="people_edit", width="stretch")
+    if start:
+        st.session_state.people_editing = True
+        st.rerun()
+    if cancel:
+        st.session_state.people_editing = False
+        st.session_state.people_ver = st.session_state.get("people_ver", 0) + 1
+        st.rerun()
+    if save:
+        errors, changes = _plan_people_changes(us, edited, me)
+        if errors:
+            for e in errors:
+                st.error(e)
+        else:
+            _apply_people_changes(changes, me)
+            st.session_state.people_editing = False
+            st.session_state.people_ver = st.session_state.get("people_ver", 0) + 1
+            st.session_state.flash = (f"Saved changes for {len(changes)} {'person' if len(changes) == 1 else 'people'}." if changes else "No changes to save.")
+            st.rerun()
 
-
+    with st.expander("Reset a password"):
+        who = st.selectbox("Person", [u["username"] for u in us], key="pw_who")
+        newpw = st.text_input("New password (at least 8 characters)", type="password", key="pw_new")
+        if st.button("Reset password"):
+            if len(newpw) < 8:
+                st.error(f"The password needs at least 8 characters. This one has {len(newpw)}.")
+            else:
+                db.update_user(next(x for x in us if x["username"] == who)["id"], password=newpw)
+                db.log(me["username"], "reset a password", who)
+                st.session_state.flash = f"Password reset for {who}."; st.rerun()
     with st.expander("Add a person"):
         un = st.text_input("Sign-in name or Mentor code (no spaces)", key="u_name")
         dn = st.text_input("Name shown in the app", key="u_disp")
