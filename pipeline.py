@@ -1,6 +1,7 @@
 """The automatic pipeline: recording -> transcript -> themes. Runs in the background after a Mentor finishes, and on demand from the
 Review queue. Tagging uses Claude (paid, best quality) or a free Groq-hosted model. Every tag must pass the same checks as a hand-made
 tag: valid theme, and a quote that is an exact excerpt of the answer. Nothing here ever shows keys or answer text in error messages."""
+from content import plain
 import json
 import os
 import re
@@ -201,7 +202,7 @@ def process_response(rid, who="system", do_transcribe=True, do_tag=True):
         text = (r["transcript"] or "").strip()
     if text and do_tag and tagging_providers() and rid not in db.tagged_ids():
         qs = db.get_published_version("questions", int(r["question_version"] or 1)) or db.get_published("questions")[1]
-        qtext = {q["id"]: q["text"] for q in qs}.get(r["question_id"], r["question_id"])
+        qtext = {q["id"]: plain(q["text"]) for q in qs}.get(r["question_id"], r["question_id"])
         cv, cb = db.get_published("codebook")
         ok, m = tag_one(rid, r["question_id"], qtext, text, who, cb, cv)
         out.append(m)

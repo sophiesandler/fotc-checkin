@@ -13,7 +13,7 @@ import transcribe as tr
 import ui
 from auth import require
 
-SECONDS = {"Rating": 15, "Spoken": 60, "Checklist": 30}
+SECONDS = {"Rating": 15, "Spoken": 45, "Checklist": 30}      # spoken prompts ask for 30 to 60 seconds
 
 
 def _flash():
@@ -23,6 +23,37 @@ def _flash():
 
 
 # =====================================================================  MENTOR CHECK-IN
+def _pilot_screen(ci, pilot, user):
+    """One screen, all multiple choice: three quick questions about the check-in itself."""
+    st.progress(1.0, text="Last step: about this check-in")
+    st.markdown("### About this check-in")
+    st.caption("Three quick questions help us make it better. You can skip this screen.")
+    picks = {}
+    for q in pilot:
+        ui.question_html(q["text"], "q-sub")
+        labels = ct.scale_labels(q["options"])
+        pick = st.radio(ct.plain(q["text"]), labels, index=None, horizontal=True, key=f"pf_{ci['sid']}_{q['id']}", label_visibility="collapsed")
+        picks[q["id"]] = labels.index(pick) + 1 if pick else None
+
+    def save(skip):
+        rows = []
+        for q in pilot:
+            v = None if skip else picks.get(q["id"])
+            rows.append(dict(session_id=ci["sid"], ts=db.now(), user_id=user["id"], participant_code=user["username"], session_type=ci["stype"],
+                             quarter=ci["quarter"], season=ci["season"], question_id=q["id"], question_version=ci["ver"], qtype=q["type"],
+                             rating=str(v) if v else "", text_answer="", checklist_selected="", checklist_top="", audio_blob=None, audio_note="",
+                             transcript="", skipped=v is None, linked_themes=q.get("themes", "")))
+        db.add_responses(rows)
+        ci["idx"] = len(ci["session"])
+        db.update_session(ci["sid"], ci["idx"], True)
+
+    c1, c2, _ = st.columns([1, 1.7, 2.6])
+    if c1.button("Finish", type="primary", key="pf_finish"):
+        save(False); st.rerun()
+    if c2.button("Skip this screen", key="pf_skip"):
+        save(True); st.rerun()
+
+
 def page_checkin():
     user = require("mentor")
     st.title(db.get_setting("app_title", "Mentor check-in"))
@@ -35,6 +66,9 @@ def page_checkin():
         quarter = seasons.number(seasons.parse(season)[0])
         ver, qs = db.get_published("questions")
         session = ct.build_session(qs, stype, quarter, bool(fresh.get("first_year")))
+        main = [q for q in session if q["block"] != "Pilot feedback"]
+        pilot = [q for q in session if q["block"] == "Pilot feedback"]
+        session = main + pilot                                       # the one-screen pilot feedback always comes last
         minutes = max(1, round(_estimate_minutes(session)))
         before = [s for s in db.get_sessions() if s["participant_code"] == user["username"] and s["season"] == season and s["session_type"] == stype and s["completed"]]
         allow_repeat = db.get_setting("allow_repeat", "No") == "Yes"
@@ -49,11 +83,12 @@ def page_checkin():
         if before:
             st.info(f"You have already completed the {season} check-in. This one will be saved as an additional check-in." if (repeat_ok and not allow_repeat)
                     else f"You have already completed the {season} check-in. Repeats are turned on for practice, so you can take it again.")
-        st.markdown(f"**{ct.type_label(stype)} for {season}:** {len(session)} questions, about {minutes} minute{'s' if minutes != 1 else ''}. You can skip any question.")
+        extra = f", then a {len(pilot)}-question feedback screen" if pilot else ""
+        st.markdown(f"**{ct.type_label(stype)} for {season}:** {len(main)} questions, about {minutes} minute{'s' if minutes != 1 else ''}{extra}. You can skip any question.")
         st.markdown(db.get_setting("consent_text"))
         agreed = st.checkbox("I understand and want to continue", key="ci_agree")
         if st.button("Start", type="primary", disabled=not agreed):
-            st.session_state.ci = dict(phase="q", idx=0, sid=uuid.uuid4().hex[:10], ver=ver, session=session, stype=stype, quarter=quarter, season=season)
+            st.session_state.ci = dict(phase="q", idx=0, sid=uuid.uuid4().hex[:10], ver=ver, session=session, nmain=len(main), stype=stype, quarter=quarter, season=season)
             db.start_session(st.session_state.ci["sid"], user["username"], season, stype, len(session))
             st.rerun()
         return
@@ -77,13 +112,17 @@ def page_checkin():
         return
 
     session, i = ci["session"], ci["idx"]
+    nmain = ci.get("nmain", len(session))
     if i >= len(session):
         ci["phase"] = "done"
         st.rerun()
+    if i >= nmain:
+        _pilot_screen(ci, session[nmain:], user)
+        return
     q = session[i]
-    last = i == len(session) - 1
-    st.progress(i / len(session), text=f"Question {i + 1} of {len(session)}")
-    st.subheader(q["text"])
+    last = i == nmain - 1 and nmain == len(session)
+    st.progress(i / nmain, text=f"Question {i + 1} of {nmain}")
+    ui.question_html(q["text"])
     k = f"{ci['sid']}_{i}"
     rating = audio = text = chosen = top = None
     if q["type"] == "Rating":
@@ -123,7 +162,7 @@ def page_checkin():
         ci["idx"] += 1
         db.update_session(ci["sid"], ci["idx"], ci["idx"] >= len(session))
 
-    c1, c2, _ = st.columns([1, 1, 3])
+    c1, c2, _ = st.columns([1, 1.7, 2.6])
     if c1.button("Finish" if last else "Next", type="primary", key="n" + k):
         save(False); st.rerun()
     if c2.button("Skip this question", key="k" + k):
@@ -133,7 +172,7 @@ def page_checkin():
 # =====================================================================  LEADERSHIP OVERVIEW
 def _question_text_map():
     ver, qs = db.get_published("questions")
-    return {q["id"]: q["text"] for q in qs}
+    return {q["id"]: ct.plain(q["text"]) for q in qs}
 
 
 def page_overview():
@@ -217,7 +256,7 @@ def _unscheduled(qs):
 
 
 def _estimate_minutes(session):
-    sec = 30 + sum(SECONDS[q["type"]] for q in session)
+    sec = 30 + sum(SECONDS[q["type"]] for q in session if q["block"] != "Pilot feedback")      # the pilot feedback screen is counted separately
     return round(sec / 60, 1)
 
 
@@ -258,7 +297,7 @@ def page_questions():
                 label = f"{q['id']}  |  {q['text'][:90]}" + ("   (retired)" if not q.get("active", True) else "")
                 with st.expander(label):
                     k = f"{stamp}_{q['id']}_"
-                    st.text_area("Question wording", q["text"], key=k + "text", help="Exactly what the Mentor sees.")
+                    st.text_area("Question wording", q["text"], key=k + "text", help="Exactly what the Mentor sees. Put **double asterisks** around the words that should be bold.")
                     c1, c2, c3, c4 = st.columns(4)
                     c1.selectbox("Question type", ct.TYPES, index=ct.TYPES.index(q["type"]), key=k + "type")
                     c2.selectbox("Asked in", ct.WAVES, index=ct.WAVES.index(q["wave"]), key=k + "wave", format_func=ct.wave_label)

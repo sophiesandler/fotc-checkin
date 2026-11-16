@@ -5,7 +5,7 @@
    "order": 10,
    "block": "Stable core",
    "type": "Rating",
-   "text": "How likely are you to still be a Professional Mentor with Friends of the Children one year from now?",
+   "text": "How likely are you to **still be a Professional Mentor with Friends of the Children** one year from now?",
    "options": "1 = Very unlikely ... 5 = Very likely (or Prefer not to answer)",
    "themes": "All themes",
    "wave": "Quarterly + Exit",
@@ -18,7 +18,7 @@
    "order": 20,
    "block": "Stable core",
    "type": "Rating",
-   "text": "Over the last three months, my workload has been sustainable.",
+   "text": "This season, my **workload has been manageable**.",
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T02 Portfolio & Workload",
    "wave": "Quarterly + Exit",
@@ -31,7 +31,7 @@
    "order": 30,
    "block": "Stable core",
    "type": "Rating",
-   "text": "I get the support I need from my supervisor.",
+   "text": "This season, my **supervisor has given me the support I need**.",
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T04 Supervisor & Program Team",
    "wave": "Quarterly + Exit",
@@ -44,7 +44,7 @@
    "order": 40,
    "block": "Stable core",
    "type": "Rating",
-   "text": "I understand what is expected of me in my role.",
+   "text": "I **understand what is expected of me** in my role.",
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T05 Role Clarity",
    "wave": "Quarterly + Exit",
@@ -61,7 +61,7 @@
    "options": "1 = Not at all meaningful ... 5 = Very meaningful (or Not applicable)",
    "themes": "T01 School-Day Gap",
    "wave": "Quarterly + Exit",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -74,7 +74,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T08 Youth/Family Challenges & Safety",
    "wave": "Quarterly + Exit",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -83,7 +83,7 @@
    "order": 70,
    "block": "Stable core",
    "type": "Rating",
-   "text": "I feel connected to the mission of Friends of the Children.",
+   "text": "I **feel connected to the Friends of the Children mission**: impacting generational change by empowering youth who are facing the greatest obstacles through relationships with professional mentors.",
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T09 Mission & Model Fit",
    "wave": "Quarterly + Exit",
@@ -100,7 +100,7 @@
    "options": "Audio recording or typed response",
    "themes": "All themes",
    "wave": "Quarterly + Exit",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -113,16 +113,16 @@
    "options": "Audio recording or typed response",
    "themes": "All themes",
    "wave": "Quarterly + Exit",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
   {
    "id": "Z01",
-   "order": 100,
+   "order": 110,
    "block": "Closing",
    "type": "Spoken",
-   "text": "Is there anything else you want Friends of the Children leadership to know?",
+   "text": "Optional: in 30–60 seconds, share **anything else** you want Friends of the Children to know.",
    "options": "Audio recording or typed response",
    "themes": "T99 Other / Emerging",
    "wave": "Quarterly + Exit",
@@ -139,7 +139,7 @@
    "options": "Audio recording or typed response",
    "themes": "T10 Life Changes",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -152,7 +152,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T03 Time & Boundaries",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     1
    ],
@@ -167,7 +167,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T11 Team Culture & Belonging",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     1,
     4
@@ -183,7 +183,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T06 Training & Onboarding",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     2
    ],
@@ -198,7 +198,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T07 Pay & Career Growth",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     2
    ],
@@ -213,7 +213,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T07 Pay & Career Growth",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     3
    ],
@@ -228,7 +228,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T04 Supervisor & Program Team; T11 Team Culture & Belonging",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     3
    ],
@@ -243,7 +243,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "T08 Youth/Family Challenges & Safety",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     4
    ],
@@ -258,7 +258,7 @@
    "options": "Audio recording or typed response",
    "themes": "T01 School-Day Gap",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     1
    ],
@@ -273,7 +273,7 @@
    "options": "Audio recording or typed response",
    "themes": "T04 Supervisor & Program Team; T11 Team Culture & Belonging",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     3
    ],
@@ -288,7 +288,7 @@
    "options": "Audio recording or typed response",
    "themes": "T06 Training & Onboarding",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     2
    ],
@@ -303,7 +303,7 @@
    "options": "Audio recording or typed response",
    "themes": "T02 Portfolio & Workload; T03 Time & Boundaries",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [
     4
    ],
@@ -318,7 +318,7 @@
    "options": "Audio recording or typed response",
    "themes": "T11 Team Culture & Belonging",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -331,7 +331,7 @@
    "options": "Audio recording or typed response",
    "themes": "T07 Pay & Career Growth; T09 Mission & Model Fit",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -340,7 +340,7 @@
    "order": 250,
    "block": "Exit only",
    "type": "Spoken",
-   "text": "What was the main reason you decided to leave?",
+   "text": "In 30–60 seconds, tell us the **main reason you decided to leave**.",
    "options": "Audio recording or typed response",
    "themes": "All themes",
    "wave": "Exit",
@@ -353,7 +353,7 @@
    "order": 260,
    "block": "Exit only",
    "type": "Spoken",
-   "text": "Is there anything Friends of the Children could have done differently that might have changed your decision?",
+   "text": "In 30–60 seconds, tell us **one thing Friends of the Children could have done differently** that might have changed your decision.",
    "options": "Audio recording or typed response",
    "themes": "All themes",
    "wave": "Exit",
@@ -366,7 +366,7 @@
    "order": 270,
    "block": "Exit only",
    "type": "Checklist",
-   "text": "Which of these played a role in your decision? Select all that apply, then mark the one that mattered most.",
+   "text": "Select **every factor that played a role** in your decision, then mark the one that mattered most.",
    "options": "Meaningful work during school hours; Size of my portfolio or workload; Hours, schedule, and work-life balance; Relationship with my supervisor or program team; Clarity of my role and expectations; Training and onboarding; Pay, benefits, or career path; Emotional toll or safety concerns related to the work; Fit with the long-term model and mission; Life changes or an outside opportunity; Team connection and culture; Something else",
    "themes": "T01 School-Day Gap; T02 Portfolio & Workload; T03 Time & Boundaries; T04 Supervisor & Program Team; T05 Role Clarity; T06 Training & Onboarding; T07 Pay & Career Growth; T08 Youth/Family Challenges & Safety; T09 Mission & Model Fit; T10 Life Changes; T11 Team Culture & Belonging; T99 Other / Emerging",
    "wave": "Exit",
@@ -379,7 +379,7 @@
    "order": 280,
    "block": "Exit only",
    "type": "Rating",
-   "text": "Would you consider returning to Friends of the Children in the future?",
+   "text": "Would you **consider returning** to Friends of the Children in the future?",
    "options": "1 = Definitely not ... 5 = Definitely (or Prefer not to answer)",
    "themes": "All themes",
    "wave": "Exit",
@@ -392,7 +392,7 @@
    "order": 290,
    "block": "Exit only",
    "type": "Spoken",
-   "text": "What advice would you give a new Professional Mentor?",
+   "text": "In 30–60 seconds, what **advice would you give a new Professional Mentor**?",
    "options": "Audio recording or typed response",
    "themes": "All themes",
    "wave": "Exit",
@@ -405,7 +405,7 @@
    "order": 10,
    "block": "Pilot feedback",
    "type": "Rating",
-   "text": "It was easy to use this check-in.",
+   "text": "This check-in was **easy to use**.",
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "About the check-in itself",
    "wave": "Quarterly",
@@ -418,7 +418,7 @@
    "order": 20,
    "block": "Pilot feedback",
    "type": "Rating",
-   "text": "I felt comfortable answering honestly.",
+   "text": "I felt **comfortable answering honestly**.",
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "About the check-in itself",
    "wave": "Quarterly",
@@ -435,7 +435,7 @@
    "options": "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)",
    "themes": "About the check-in itself",
    "wave": "Quarterly",
-   "active": true,
+   "active": false,
    "quarters": [],
    "first_year_always": false
   },
@@ -446,6 +446,58 @@
    "type": "Spoken",
    "text": "What would make this check-in better?",
    "options": "Audio recording or typed response",
+   "themes": "About the check-in itself",
+   "wave": "Quarterly",
+   "active": false,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C10",
+   "order": 80,
+   "block": "Stable core",
+   "type": "Spoken",
+   "text": "In 30–60 seconds, name **2 or 3 activities you did with your mentee this season** and **which mattered most** for your relationship.",
+   "options": "Audio recording or typed response",
+   "themes": "T09 Mission & Model Fit",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C11",
+   "order": 90,
+   "block": "Stable core",
+   "type": "Spoken",
+   "text": "In 30–60 seconds, describe the **hardest part of building or maintaining your relationship with your mentee** this season, using one specific example.",
+   "options": "Audio recording or typed response",
+   "themes": "All themes",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "C12",
+   "order": 100,
+   "block": "Stable core",
+   "type": "Spoken",
+   "text": "In 30–60 seconds, tell us **where you need the most support** and how Friends of the Children could support you better.",
+   "options": "Audio recording or typed response",
+   "themes": "T04 Supervisor & Program Team",
+   "wave": "Quarterly",
+   "active": true,
+   "quarters": [],
+   "first_year_always": false
+  },
+  {
+   "id": "P05",
+   "order": 30,
+   "block": "Pilot feedback",
+   "type": "Rating",
+   "text": "Overall, **how satisfied are you with this check-in**?",
+   "options": "1 = Very dissatisfied ... 5 = Very satisfied (or Prefer not to answer)",
    "themes": "About the check-in itself",
    "wave": "Quarterly",
    "active": true,
@@ -738,6 +790,7 @@
   "thanks_text": "Your answers were saved. They help Friends of the Children understand what supports Mentors and what gets in the way.\n\nAfter each quarter, leadership will share what changed because of what Mentors said. If you raised a safety concern, a designated person will follow up with you.",
   "min_group": "5",
   "app_title": "Mentor check-in",
-  "program_stage": "Pilot year"
+  "program_stage": "Pilot year",
+  "question_set_rev": "2"
  }
 }

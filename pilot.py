@@ -15,7 +15,7 @@ from auth import require
 
 CORE = risk.CORE
 SHORT = dash.SHORT
-FEEDBACK = {"P01": "It was easy to use this check-in", "P02": "I felt comfortable answering honestly", "P03": "I trust my answers will be used to support Mentors"}
+FEEDBACK = {"P01": "This check-in was easy to use", "P02": "I felt comfortable answering honestly", "P05": "I am satisfied with this check-in"}
 TARGETS = {"completion": 0.80, "minutes": 8.0, "skip": 0.10, "trust": 4.0}
 SRC = ["Live pilot data", "Example (synthetic)"]
 STATUS_COLORS = {"Done": "background-color:#D6EFD9;color:#1B5E20;font-weight:700", "In progress": "background-color:#FFD9A0;color:#282828;font-weight:700",
@@ -40,7 +40,7 @@ def live_pilot():
     rows = db.fetch_responses()
     resp = pd.DataFrame(rows)
     pq = db.get_published("questions")[1]
-    qtext = {q["id"]: q["text"] for q in pq}
+    qtext = {q["id"]: ct.plain(q["text"]) for q in pq}
     qblock = {q["id"]: q["block"] for q in pq}
     qorder = {q["id"]: i for i, q in enumerate(pq)}
     ratings = pd.DataFrame(columns=["mentor", "season", "qid", "value"])
@@ -81,14 +81,12 @@ def example_pilot():
     d = dash.demo_checkins()
     waves = seasons.ordered(list(d["wave"].unique()))          # every synthetic season, past and current
     pq = db.get_published("questions")[1]
-    qtext = {q["id"]: q["text"] for q in pq}
+    qtext = {q["id"]: ct.plain(q["text"]) for q in pq}
     qblock = {q["id"]: q["block"] for q in pq}
     qorder = {q["id"]: i for i, q in enumerate(pq)}
-    n_q = 18
-    skip = {"C01": .02, "C02": .03, "C03": .03, "C04": .05, "C05": .12, "C06": .05, "C07": .04, "C08": .06, "C09": .09, "R01": .04, "R02": .05, "S01": .17,
-            "P01": .02, "P02": .03, "P03": .07, "P04": .29, "Z01": .35, "O01": .58}
-    comments = ["The record button was easy to find.", "I wasn't sure whether my supervisor could hear this.", "I would rather type than speak some days.",
-                "It took longer than I expected.", "I liked that I could skip questions.", "The wording of the question about time when youth are away confused me."]
+    n_q = 12
+    skip = {"C01": .02, "C02": .03, "C03": .03, "C04": .05, "C07": .04, "C10": .08, "C11": .10, "C12": .12, "Z01": .35,
+            "P01": .02, "P02": .03, "P05": .02}
     tg_all = dash.demo_tags()
     sess, qs, ratings, answers = [], [], [], []
     for si, season in enumerate(waves):
@@ -107,10 +105,10 @@ def example_pilot():
             qs.append(dict(season=season, qid=q, reached=reached, skipped=int(round(reached * rate))))
         for m in mentors[:done_n]:
             row = first[first["mentor"] == m].iloc[0]
-            for c in CORE:
+            for c in ("C01", "C02", "C03", "C04", "C07"):                  # the five ratings still asked every season
                 if not pd.isna(row[c]):
                     ratings.append(dict(mentor=m, season=season, qid=c, value=float(row[c])))
-            for qid, p in (("P01", [.0, .02, .08, .35, .55]), ("P02", [.02, .06, .22, .40, .30]), ("P03", [.04, .10, .30, .36, .20])):
+            for qid, p in (("P01", [.0, .02, .08, .35, .55]), ("P02", [.02, .06, .22, .40, .30]), ("P05", [.02, .06, .24, .42, .26])):
                 p = np.array(p, dtype=float)
                 if qid != "P01":                                   # trust and ease creep up a little each season
                     p[2] -= 0.015 * si
@@ -120,9 +118,6 @@ def example_pilot():
         for i, r in enumerate(tg.itertuples(index=False)):
             answers.append(dict(id=1000 + si * 100 + i, mentor=r.mentor, season=season, qid=r.question, qtext=qtext.get(r.question, r.question), text=r.quote, audio=bool(i % 2 == 0),
                                 reviewed=i % 3 != 0, starred=i in (1, 4, 9), excerpt="", themes=dash.THEME_SHORT.get(r.theme, r.theme), escalated=False))
-        for i, text in enumerate(comments[:min(len(comments), n)]):
-            answers.append(dict(id=2000 + si * 10 + i, mentor=mentors[i], season=season, qid="P04", qtext=qtext.get("P04", "What would make this check-in better?"), text=text, audio=False,
-                                reviewed=False, starred=False, excerpt="", themes="About the check-in", escalated=False))
     first_season = waves[0] if waves else "Summer 2025"
     spread = waves[1:4] + [first_season] * 3                          # spread the example actions over the first seasons
     acts = pd.DataFrame([
@@ -190,7 +185,7 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
     qs["rate"] = qs["skipped"] / qs["reached"].where(qs["reached"] > 0)
     qs["optional"] = qs["qid"].map(lambda q: data["qblock"].get(q) in ("Optional", "Closing"))
     core_skip = qs[qs["qid"].isin(CORE) & (qs["reached"] >= k)]["rate"].max() if not qs.empty else None
-    trust = data["ratings"][(data["ratings"]["season"] == sel) & (data["ratings"]["qid"] == "P03")]["value"]
+    trust = data["ratings"][(data["ratings"]["season"] == sel) & (data["ratings"]["qid"] == "P02")]["value"]
     trust_m = float(trust.mean()) if len(trust) >= k else None
     ui.section("How is the pilot going?", "Purpose: check whether the check-in is working. How to use: look for orange rows, which are goals not yet met. These targets are suggestions to agree with Friends of the Children.")
     rows = []
@@ -200,7 +195,7 @@ def _health(data, sel, s_sel, started, completed, invited, med, k, admin):
     judge(rate, rate is not None and rate >= TARGETS["completion"], f"At least {TARGETS['completion']:.0%} of Mentors finish", f"{rate:.0%}" if rate is not None else "-")
     judge(med if (admin or completed >= k) else None, med is not None and med <= TARGETS["minutes"], f"Typical time is {TARGETS['minutes']:.0f} minutes or less", f"{med:.1f} min" if med is not None else "-")
     judge(core_skip, core_skip is not None and core_skip <= TARGETS["skip"], f"No core question skipped by more than {TARGETS['skip']:.0%}", f"{core_skip:.0%} at most" if core_skip is not None else "-")
-    judge(trust_m, trust_m is not None and trust_m >= TARGETS["trust"], f"Mentors trust it (average {TARGETS['trust']:.1f} or higher)", f"{trust_m:.1f}" if trust_m is not None else "-")
+    judge(trust_m, trust_m is not None and trust_m >= TARGETS["trust"], f"Mentors feel comfortable answering honestly (average {TARGETS['trust']:.1f} or higher)", f"{trust_m:.1f}" if trust_m is not None else "-")
     goals = pd.DataFrame(rows)
     st.dataframe(goals.style.map(lambda x: {"Met": "background-color:#D6EFD9;color:#1B5E20;font-weight:700", "Not yet": "background-color:#FFD9A0;color:#282828;font-weight:700"}.get(x, ""), subset=["Status"]),
                  hide_index=True, width="stretch")
@@ -348,11 +343,11 @@ def _actions(data, sel, cur_label, admin, user, example):
 
 
 def _feedback(data, sel, k, admin, user, example):
-    ui.section("Feedback on the check-in itself", "Purpose: learn whether Mentors find the check-in easy and trustworthy. How to use: bars past the dashed line meet the target. Orange bars do not.")
+    ui.section("Feedback on the check-in itself", "Purpose: learn whether Mentors find the check-in easy, feel comfortable answering honestly, and are satisfied with it. How to use: bars past the dashed line meet the target. Orange bars do not.")
     have = {q["id"] for q in db.get_published("questions")[1]}
     if not set(FEEDBACK) <= have:
         if admin:
-            st.info("The pilot feedback questions are not in your question set yet. They ask Mentors whether the check-in was easy, whether they felt comfortable, and whether they trust it.")
+            st.info("The pilot feedback questions are not in your question set yet. They ask Mentors whether the check-in was easy, whether they felt comfortable answering honestly, and how satisfied they are.")
             if st.button("Add the standard pilot feedback questions", type="primary"):
                 if db.get_draft("questions") is not None:
                     st.error("You have unpublished question edits. Publish or discard them on the Questions page first.")
@@ -381,11 +376,9 @@ def _feedback(data, sel, k, admin, user, example):
             color=alt.condition(alt.datum["Average (1 to 5)"] >= TARGETS["trust"], alt.value(dash.BLUE_), alt.value(dash.ORANGE_)))
         target = alt.Chart(pd.DataFrame({"x": [TARGETS["trust"]]})).mark_rule(color="#282828", strokeDash=[6, 4], strokeWidth=2).encode(x="x:Q")
         dash.plot(b + target + b.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Average (1 to 5):Q", format=".1f")), 200)
-        st.caption(f"The dashed line is the suggested target ({TARGETS['trust']:.1f}). Blue meets it, orange does not. Trust matters most: if Mentors do not trust the check-in, they will stop answering honestly.")
+        st.caption(f"The dashed line is the suggested target ({TARGETS['trust']:.1f}). Blue meets it, orange does not. Feeling comfortable answering honestly matters most: if Mentors do not, their answers stop being useful.")
     else:
         st.info(f"Each statement needs at least {k} answers to be shown.")
-    if admin:
-        st.caption("Read comments about the check-in in the Review queue's optional lookup by choosing question P04.")
 
 
 def _readiness(data, all_seasons, k):

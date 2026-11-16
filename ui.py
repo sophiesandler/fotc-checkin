@@ -94,6 +94,12 @@ blockquote p {{ color:{CHARCOAL}; font-size:1.05rem; }}
 [class*="st-key-homecard_"] a[data-testid="stPageLink-NavLink"]::after {{ content:""; position:absolute; top:0; left:0; right:0; bottom:0; z-index:5; }}
 [class*="st-key-homecard_"] a[data-testid="stPageLink-NavLink"] {{ color:{BLUE}; font-weight:600; }}
 
+/* Mentor question text */
+.q-text {{ font-size:1.45rem; line-height:1.45; font-weight:400; color:{CHARCOAL}; margin:.4rem 0 .8rem 0; }}
+.q-text b {{ font-weight:700; }}
+.q-sub {{ font-size:1.05rem; line-height:1.4; margin:.9rem 0 .2rem 0; color:{CHARCOAL}; }}
+.q-sub b {{ font-weight:700; }}
+
 /* login hero */
 .hero {{ position:relative; min-height:430px; background:{BLUE}; clip-path:polygon(14% 0, 100% 0, 100% 100%, 0 100%); display:flex; align-items:flex-end; justify-content:flex-end; padding:0; }}
 .hero .stat {{ background:{NAVY}; color:#FFFFFF; padding:22px 30px; margin:0 0 0 0; min-width:62%; }}
@@ -138,3 +144,12 @@ def section(title, purpose=None, level=2):
         st.markdown(f"#### {title}")
     if purpose:
         st.caption(purpose)
+
+
+def question_html(text, cls="q-text"):
+    """Show a question in normal sentence case. Words between **double asterisks** are bold."""
+    import html
+    safe = html.escape(text or "")
+    parts = safe.split("**")
+    body = "".join(f"<b>{p}</b>" if i % 2 else p for i, p in enumerate(parts))
+    st.markdown(f"<div class='{cls}'>{body}</div>", unsafe_allow_html=True)

@@ -1,5 +1,6 @@
 """Tag answers: turn spoken answers into themes. A short manual step for now (copy a message into a Claude chat, paste the
 reply back). The Dashboard's Themes tab reads what is saved here."""
+from content import plain
 import json
 import re
 
@@ -63,7 +64,7 @@ def page_tag_answers():
         columns={"id": "ID", "participant_code": "Mentor", "season": "Season", "question_id": "Question"}), hide_index=True, width="stretch")
     rid = st.selectbox("Choose an answer", df["id"].tolist(), format_func=lambda i: f"#{i}  {df[df['id'] == i]['participant_code'].iloc[0]}  {df[df['id'] == i]['question_id'].iloc[0]}  ({df[df['id'] == i]['Status'].iloc[0]})")
     r = df[df["id"] == rid].iloc[0]
-    qtexts = {q["id"]: q["text"] for q in (db.get_published_version("questions", int(r["question_version"])) or [])}
+    qtexts = {q["id"]: plain(q["text"]) for q in (db.get_published_version("questions", int(r["question_version"])) or [])}
     qtext = qtexts.get(r["question_id"], r["question_id"])
     st.markdown(f"**Question:** {qtext}")
     text = r["Text"].strip()

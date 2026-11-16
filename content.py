@@ -171,12 +171,84 @@ Return a single JSON object and nothing else (no markdown fences, no commentary)
 
 
 AGREE = "1 = Strongly disagree ... 5 = Strongly agree (or Prefer not to answer)"
+SATISFIED = "1 = Very dissatisfied ... 5 = Very satisfied (or Prefer not to answer)"
+SPOKEN_OPTIONS = "Audio recording or typed response"
+QUESTION_REV = "2"          # bump this when the default question set changes, so existing databases get upgraded once
+
+
+def _q(qid, order, block, qtype, text, options, themes, wave="Quarterly", active=True):
+    return dict(id=qid, order=order, block=block, type=qtype, text=text, options=options, themes=themes, wave=wave, active=active, quarters=[], first_year_always=False)
+
+
 PILOT_QUESTIONS = [
-    dict(id="P01", order=10, block="Pilot feedback", type="Rating", text="It was easy to use this check-in.", options=AGREE, themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
-    dict(id="P02", order=20, block="Pilot feedback", type="Rating", text="I felt comfortable answering honestly.", options=AGREE, themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
-    dict(id="P03", order=30, block="Pilot feedback", type="Rating", text="I trust that my answers will be used to support Mentors, not to judge them.", options=AGREE, themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
-    dict(id="P04", order=40, block="Pilot feedback", type="Spoken", text="What would make this check-in better?", options="Audio recording or typed response", themes="About the check-in itself", wave="Quarterly", active=True, quarters=[], first_year_always=False),
+    _q("P01", 10, "Pilot feedback", "Rating", "This check-in was **easy to use**.", AGREE, "About the check-in itself"),
+    _q("P02", 20, "Pilot feedback", "Rating", "I felt **comfortable answering honestly**.", AGREE, "About the check-in itself"),
+    _q("P05", 30, "Pilot feedback", "Rating", "Overall, **how satisfied are you with this check-in**?", SATISFIED, "About the check-in itself"),
 ]
+
+# The revised quarterly check-in (Nov 2026): 5 ratings and 4 spoken questions, then the pilot feedback screen. **bold** marks the key phrase.
+QUESTION_SET_V2 = [
+    _q("C01", 10, "Stable core", "Rating", "How likely are you to **still be a Professional Mentor with Friends of the Children** one year from now?",
+       "1 = Very unlikely ... 5 = Very likely (or Prefer not to answer)", "All themes", "Quarterly + Exit"),
+    _q("C02", 20, "Stable core", "Rating", "This season, my **workload has been manageable**.", AGREE, "T02 Portfolio & Workload", "Quarterly + Exit"),
+    _q("C03", 30, "Stable core", "Rating", "This season, my **supervisor has given me the support I need**.", AGREE, "T04 Supervisor & Program Team", "Quarterly + Exit"),
+    _q("C04", 40, "Stable core", "Rating", "I **understand what is expected of me** in my role.", AGREE, "T05 Role Clarity", "Quarterly + Exit"),
+    _q("C07", 70, "Stable core", "Rating", "I **feel connected to the Friends of the Children mission**: impacting generational change by empowering youth who are facing the greatest obstacles through relationships with professional mentors.",
+       AGREE, "T09 Mission & Model Fit", "Quarterly + Exit"),
+    _q("C10", 80, "Stable core", "Spoken", "In 30\u201360 seconds, name **2 or 3 activities you did with your mentee this season** and **which mattered most** for your relationship.",
+       SPOKEN_OPTIONS, "T09 Mission & Model Fit"),
+    _q("C11", 90, "Stable core", "Spoken", "In 30\u201360 seconds, describe the **hardest part of building or maintaining your relationship with your mentee** this season, using one specific example.",
+       SPOKEN_OPTIONS, "All themes"),
+    _q("C12", 100, "Stable core", "Spoken", "In 30\u201360 seconds, tell us **where you need the most support** and how Friends of the Children could support you better.",
+       SPOKEN_OPTIONS, "T04 Supervisor & Program Team"),
+    _q("Z01", 110, "Closing", "Spoken", "Optional: in 30\u201360 seconds, share **anything else** you want Friends of the Children to know.",
+       SPOKEN_OPTIONS, "T99 Other / Emerging", "Quarterly + Exit"),
+] + PILOT_QUESTIONS
+
+# Exit interview wording (same questions, clearer and with the answer length stated)
+EXIT_TEXT = {
+    "X01": "In 30\u201360 seconds, tell us the **main reason you decided to leave**.",
+    "X02": "In 30\u201360 seconds, tell us **one thing Friends of the Children could have done differently** that might have changed your decision.",
+    "X03": "Select **every factor that played a role** in your decision, then mark the one that mattered most.",
+    "X04": "Would you **consider returning** to Friends of the Children in the future?",
+    "X05": "In 30\u201360 seconds, what **advice would you give a new Professional Mentor**?",
+}
+# Switched off (kept in the bank, with their history): the school-day and emotional-support ratings, the old spoken questions, the rotating
+# questions, the outside-of-work question, and the old trust and comment questions on the pilot screen.
+RETIRED_V2 = {"C05", "C06", "C08", "C09", "O01", "P03", "P04"}
+
+
+def migrate_questions(pub):
+    """Return the question list with the revised set applied. Old questions are switched off, not deleted, so past answers keep their wording."""
+    by_id = {q["id"]: dict(q) for q in pub}
+    order = [q["id"] for q in pub]
+    for q in QUESTION_SET_V2:
+        if q["id"] not in by_id:
+            order.append(q["id"])
+        by_id[q["id"]] = dict(q)
+    for qid, text in EXIT_TEXT.items():
+        if qid in by_id:
+            by_id[qid]["text"] = text
+    for qid, q in by_id.items():
+        if q.get("block") == "Rotating" or qid in RETIRED_V2:
+            q["active"] = False
+    return [by_id[i] for i in order]
+
+
+def plain(text):
+    """Question wording without the **bold** marks, for places that show plain text."""
+    return (text or "").replace("**", "")
+
+
+def scale_labels(options):
+    """The five words shown on the one-screen pilot feedback, taken from the scale's two end labels."""
+    ends = re.findall(r"1 = ([^.]+?) \.\.\. 5 = ([^(]+?)(?: \(|$)", options or "")
+    pair = (ends[0][0].strip(), ends[0][1].strip()) if ends else ("", "")
+    if pair == ("Strongly disagree", "Strongly agree"):
+        return ["Strongly disagree", "Disagree", "Neutral", "Agree", "Strongly agree"]
+    if pair == ("Very dissatisfied", "Very satisfied"):
+        return ["Very dissatisfied", "Dissatisfied", "Neutral", "Satisfied", "Very satisfied"]
+    return ["1", "2", "3", "4", "5"]
 
 
 # Stored values stay the same; these are the words people see.

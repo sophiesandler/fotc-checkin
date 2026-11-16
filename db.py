@@ -99,6 +99,7 @@ def engine():
     meta.create_all(e)
     migrate(e)
     seed(e)
+    migrate_questions(e)
     return e
 
 
@@ -109,6 +110,30 @@ def migrate(e):
     if "season" not in cols:
         with e.begin() as c:
             c.execute(text("ALTER TABLE responses ADD COLUMN season VARCHAR(20)"))
+
+
+def migrate_questions(e):
+    """One time: bring an existing database up to the revised question set. Unpublished edits are never overwritten."""
+    import content as ct
+    with e.begin() as c:
+        rev = c.execute(select(settings.c.value).where(settings.c.key == "question_set_rev")).scalar()
+        if rev == ct.QUESTION_REV:
+            return
+        if c.execute(select(content.c.id).where((content.c.kind == "questions") & (content.c.status == "draft"))).first():
+            return                                         # a draft is waiting: leave it alone, and try again after it is published or discarded
+        r = c.execute(select(content).where((content.c.kind == "questions") & (content.c.status == "published"))
+                      .order_by(content.c.version.desc())).mappings().first()
+        if r is None:
+            return
+        new = ct.migrate_questions(json.loads(r["payload"]))
+        top = c.execute(select(func.max(content.c.version)).where(content.c.kind == "questions")).scalar() or 0
+        c.execute(update(content).where((content.c.kind == "questions") & (content.c.status == "published")).values(status="archived"))
+        c.execute(insert(content).values(kind="questions", version=top + 1, status="published", payload=json.dumps(new),
+                                         note="Revised from Mentor feedback: fewer, more specific questions", created_by="system", created=now()))
+        if c.execute(select(settings.c.key).where(settings.c.key == "question_set_rev")).first():
+            c.execute(update(settings).where(settings.c.key == "question_set_rev").values(value=ct.QUESTION_REV))
+        else:
+            c.execute(insert(settings).values(key="question_set_rev", value=ct.QUESTION_REV))
 
 
 def using_sqlite():

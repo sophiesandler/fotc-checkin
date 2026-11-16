@@ -1,6 +1,7 @@
 """Review queue. Transcription and tagging run on their own. This page shows only what needs a person:
 answers the AI flagged for support or asked a person to check, and answers the automation could not finish.
 The full list of answers is still here, but tucked away as an optional lookup."""
+from content import plain
 import pandas as pd
 import streamlit as st
 
@@ -57,7 +58,7 @@ def _records(rows, codebook):
 
 
 def _qtext(r, qtexts_now):
-    return {q["id"]: q["text"] for q in (db.get_published_version("questions", int(r["qver"])) or [])}.get(r["qid"], qtexts_now.get(r["qid"], r["qid"]))
+    return {q["id"]: plain(q["text"]) for q in (db.get_published_version("questions", int(r["qver"])) or [])}.get(r["qid"], qtexts_now.get(r["qid"], r["qid"]))
 
 
 # ---------------------------------------------------------------- pieces of one answer
@@ -223,7 +224,7 @@ def page_review():
 
     codebook_ver, codebook = db.get_published("codebook")
     pq = db.get_published("questions")[1]
-    qtexts_now = {q["id"]: q["text"] for q in pq}
+    qtexts_now = {q["id"]: plain(q["text"]) for q in pq}
     rows = db.spoken_responses()
     df = _records(rows, codebook)
     by_id = {int(r.id): r for r in df.itertuples(index=False)}
@@ -338,7 +339,7 @@ def _everything(user):
         df = pd.DataFrame(rows)
         texts = {}
         for ver in sorted(df["question_version"].dropna().unique()):
-            texts[int(ver)] = {q["id"]: q["text"] for q in (db.get_published_version("questions", int(ver)) or [])}
+            texts[int(ver)] = {q["id"]: plain(q["text"]) for q in (db.get_published_version("questions", int(ver)) or [])}
         df["Question"] = [texts.get(int(ver), {}).get(qid, "") for ver, qid in zip(df["question_version"], df["question_id"])]
         df["Answer"] = df["rating"].fillna("") + df["text_answer"].fillna("") + df["transcript"].fillna("") + df["checklist_selected"].fillna("")
         c1, c2 = st.columns(2)

@@ -17,7 +17,7 @@ DEFAULT_RULES = [
     dict(id="intent_drop", name="Intent to stay dropped sharply", kind="drop", item="C01", threshold=2, points=2, enabled=True),
     dict(id="support_low", name="Supervisor support is low", kind="level", item="C03", threshold=2, points=1, enabled=True),
     dict(id="workload_low", name="Workload does not feel sustainable", kind="level", item="C02", threshold=2, points=1, enabled=True),
-    dict(id="emotional_low", name="Emotional support is low", kind="level", item="C06", threshold=2, points=1, enabled=True),
+    dict(id="emotional_low", name="Emotional support is low", kind="level", item="C06", threshold=2, points=1, enabled=False),
     dict(id="mission_low", name="Mission connection is low", kind="level", item="C07", threshold=2, points=1, enabled=True),
     dict(id="many_low", name="Several areas rated low at once", kind="count_low", item="", threshold=3, points=2, enabled=True),
     dict(id="skipped_many", name="Skipped several questions", kind="skipped", item="", threshold=3, points=1, enabled=True),
