@@ -47,6 +47,9 @@ sessions = Table("sessions", meta,
 reviews = Table("reviews", meta,
                 Column("response_id", Integer, primary_key=True), Column("by_user", String(80)), Column("ts", String(40)),
                 Column("reviewed", Boolean), Column("starred", Boolean), Column("excerpt", Text))
+leader_notes = Table("leader_notes", meta,
+                     Column("response_id", Integer, primary_key=True), Column("addressed", Boolean), Column("note", Text),
+                     Column("by_user", String(80)), Column("ts", String(40)))
 proc = Table("processing", meta,
              Column("response_id", Integer, primary_key=True), Column("ts", String(40)), Column("stage", String(12)),
              Column("result", String(12)), Column("detail", Text), Column("attempts", Integer))
@@ -411,6 +414,23 @@ def get_reviews():
     _ensure(reviews)
     with engine().connect() as c:
         return [dict(r) for r in c.execute(select(reviews)).mappings()]
+
+
+def upsert_leader_note(response_id, user, addressed, note):
+    """Leadership's check box ("addressed") and comment on one standout excerpt. Never shown to Mentors."""
+    _ensure(leader_notes)
+    with engine().begin() as c:
+        vals = dict(by_user=user, ts=now(), addressed=bool(addressed), note=(note or "").strip())
+        if c.execute(select(leader_notes.c.response_id).where(leader_notes.c.response_id == response_id)).first():
+            c.execute(update(leader_notes).where(leader_notes.c.response_id == response_id).values(**vals))
+        else:
+            c.execute(insert(leader_notes).values(response_id=response_id, **vals))
+
+
+def get_leader_notes():
+    _ensure(leader_notes)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(select(leader_notes)).mappings()]
 
 
 def add_action(season, raised, action, status, owner, by_user):

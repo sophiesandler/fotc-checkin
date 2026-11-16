@@ -62,7 +62,7 @@ def _auto():
         ("a_db", "Set up", "The app uses a permanent database", not db.using_sqlite(), "The temporary database loses data when the app restarts." if db.using_sqlite() else "Connected to a permanent database."),
         ("a_season", "Set up", "A season is open for check-ins", bool(db.get_setting("current_season", "")), "Open one in Settings."),
         ("a_consent", "Approvals", "The consent wording is no longer marked as a draft", "Draft wording" not in consent, "Edit it in Settings once Friends of the Children has approved it."),
-        ("a_pilotq", "Set up", "Pilot feedback questions are in the question set", {"P01", "P02", "P05"} <= have_p, "Add them on the Pilot year page, under Pilot feedback."),
+        ("a_pilotq", "Set up", "Pilot feedback questions are in the question set", {"P01", "P02", "P05"} <= have_p, "Add them on the Pilot year page, under Pilot targets."),
         ("a_tr", "Set up", "Automatic transcription is set up (optional)", bool(tr.providers()), tr.status_line()),
         ("a_tag", "Set up", "Automatic tagging is set up (optional)", bool(pl.tagging_providers()), pl.tagging_status()),
     ]
