@@ -10,6 +10,7 @@ import dashboard as dash
 import db
 import risk
 import seasons
+import ui
 from auth import require
 
 CORE = risk.CORE
@@ -184,6 +185,7 @@ def page_pilot():
     _ratings(rating_tbl, baseline, sel, k)
     _heard(heard, sel, k, admin, user, example)
     _response(data, sel, cur_label, admin, user, example)
+    st.caption("Pilot page version 3 (rings). You can delete this line once you have confirmed the update.")
 
 
 # ---------------------------------------------------------------- 1. pilot targets
@@ -204,19 +206,25 @@ def _goal_rows(data, sel, k, admin):
 
     rows = []
 
-    def judge(value, ok, label, short, shown):
-        rows.append({"Goal": label, "Now": shown, "Status": "Not enough data" if value is None else ("Met" if ok else "Not yet"), "short": short})
+    def judge(value, ok, label, short, shown, goal, prog):
+        rows.append({"Goal": label, "Now": shown, "Status": "Not enough data" if value is None else ("Met" if ok else "Not yet"),
+                     "short": short, "goal": goal, "prog": None if value is None else max(0.0, min(1.0, prog))})
 
     shown_ok = admin or completed >= k
     rate = completed / invited if invited and shown_ok else None
-    judge(rate, rate is not None and rate >= TARGETS["completion"], f"At least {TARGETS['completion']:.0%} of Mentors finish", "finishing the check-in", f"{rate:.0%}" if rate is not None else "-")
+    judge(rate, rate is not None and rate >= TARGETS["completion"], f"At least {TARGETS['completion']:.0%} of Mentors finish", "Mentors finish", f"{rate:.0%}" if rate is not None else "-",
+          f"goal {TARGETS['completion']:.0%}", (rate or 0) / TARGETS["completion"])
     t = med if shown_ok else None
-    judge(t, t is not None and t <= TARGETS["minutes"], f"Typical time is {TARGETS['minutes']:.0f} minutes or less", "time to finish", f"{t:.1f} min" if t is not None else "-")
-    judge(core_skip, core_skip is not None and core_skip <= TARGETS["skip"], f"No core question skipped by more than {TARGETS['skip']:.0%}", "skipped questions", f"{core_skip:.0%} at most" if core_skip is not None else "-")
-    for qid, label, short in (("P01", "Mentors find the check-in easy to use", "ease of use"), ("P02", "Mentors feel comfortable answering honestly", "comfort answering honestly"),
-                              ("P05", "Mentors are satisfied with the check-in", "satisfaction")):
+    judge(t, t is not None and t <= TARGETS["minutes"], f"Typical time is {TARGETS['minutes']:.0f} minutes or less", "Time to finish", f"{t:.1f} min" if t is not None else "-",
+          f"goal {TARGETS['minutes']:.0f} min or less", 1.0 if (t or 0) <= TARGETS["minutes"] else TARGETS["minutes"] / t)
+    judge(core_skip, core_skip is not None and core_skip <= TARGETS["skip"], f"No core question skipped by more than {TARGETS['skip']:.0%}", "Questions skipped",
+          f"{core_skip:.0%} at most" if core_skip is not None else "-", f"goal {TARGETS['skip']:.0%} or less",
+          1.0 if (core_skip or 0) <= TARGETS["skip"] else TARGETS["skip"] / core_skip)
+    for qid, label, short in (("P01", "Mentors find the check-in easy to use", "Easy to use"), ("P02", "Mentors feel comfortable answering honestly", "Comfortable being honest"),
+                              ("P05", "Mentors are satisfied with the check-in", "Satisfied")):
         v = avg(qid)
-        judge(v, v is not None and v >= TARGETS["feedback"], f"{label} (average {TARGETS['feedback']:.1f} or higher)", short, f"{v:.1f}" if v is not None else "-")
+        judge(v, v is not None and v >= TARGETS["feedback"], f"{label} (average {TARGETS['feedback']:.1f} or higher)", short, f"{v:.1f}" if v is not None else "-",
+              f"goal {TARGETS['feedback']:.1f} or higher", (v or 0) / TARGETS["feedback"])
     funnel = dict(invited=invited, started=started, completed=completed, med=med, show=admin or started >= k)
     return pd.DataFrame(rows), funnel
 
@@ -224,7 +232,7 @@ def _goal_rows(data, sel, k, admin):
 def _targets(goals, funnel, k, admin, user):
     _heading("Pilot targets", "pilot-targets", "Orange rows are targets not yet met. These targets are suggestions to agree with Friends of the Children.")
     colors = {"Met": "background-color:#D6EFD9;color:#1B5E20;font-weight:700", "Not yet": "background-color:#FFD9A0;color:#282828;font-weight:700"}
-    st.dataframe(goals.drop(columns=["short"]).style.map(lambda x: colors.get(x, ""), subset=["Status"]), hide_index=True, width="stretch",
+    st.dataframe(goals.drop(columns=["short", "goal", "prog"]).style.map(lambda x: colors.get(x, ""), subset=["Status"]), hide_index=True, width="stretch",
                  column_config={"Goal": st.column_config.TextColumn(width="large"), "Now": st.column_config.TextColumn(width="small"), "Status": st.column_config.TextColumn(width="small")})
     if funnel["show"]:
         st.caption(f"{funnel['invited']} invited, {funnel['started']} started, {funnel['completed']} finished.")
@@ -387,39 +395,59 @@ def _response(data, sel, cur_label, admin, user, example):
 
 
 # ---------------------------------------------------------------- checklist and readiness
+READY_SHORT = ["Group averages", "Up and down arrows", "Full-year patterns", "Theme explorer", "Risk-rule check", "Group comparisons"]
+
+
+def _ring(p, color, size=44):
+    """A small Harvey-ball style ring with the percent inside. p is 0 to 1, or None for no data (grey, empty)."""
+    inner = size - 10
+    if p is None:
+        fill, label = "#E3E3E3", "-"
+    else:
+        fill, label = f"conic-gradient({color} {p * 360:.0f}deg, #E3E3E3 0)", f"{p:.0%}"
+    return (f"<div style='flex:none;width:{size}px;height:{size}px;border-radius:50%;background:{fill};display:flex;align-items:center;justify-content:center'>"
+            f"<div style='width:{inner}px;height:{inner}px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;"
+            f"font-size:10.5px;font-weight:700;color:#282828'>{label}</div></div>")
+
+
+def _item(p, color, label, sub, tip=""):
+    import html as _h
+    return (f"<div title='{_h.escape(tip, quote=True)}' style='display:flex;align-items:center;gap:10px'>{_ring(p, color)}"
+            f"<div style='line-height:1.2'><div style='font-weight:700;color:#282828;font-size:.95rem'>{_h.escape(label)}</div>"
+            f"<div style='color:#555;font-size:.82rem'>{_h.escape(sub)}</div></div></div>")
+
+
+READY_SHORT = ["Season averages", "Season-to-season arrows", "Full-year patterns", "Theme explorer", "Risk-rule check", "Group comparisons"]
+
+
 def _checklist(goals, funnel, heard, ready_tbl, ready_pct):
-    """The top of the page: two plain checklists. Left: is the pilot on track? Right: what can the data support yet?"""
-    icon = {"Met": "✅", "Not yet": "🟠", "Not enough data": "⚪"}
-    judged = goals[goals["Status"] != "Not enough data"]
+    """The top of the page: two compact checklists with small rings. Left: is the pilot on track? Right: what can the data support yet?"""
     met = int((goals["Status"] == "Met").sum())
     left, right = st.columns([3, 2])
     with left.container(border=True):
         st.markdown(f"#### Pilot checklist: {met} of {len(goals)} targets met")
-        lines = []
+        cells = []
         for _, r in goals.iterrows():
-            now = f"**{r['Now']}**" if r["Status"] != "Not enough data" else "not enough data yet"
-            lines.append(f"{icon[r['Status']]} {r['Goal']}: {now}")
+            color = ui.BLUE if r["Status"] == "Met" else ui.ORANGE
+            sub = f"{r['Now']} · {r['goal']}" if r["Status"] != "Not enough data" else "not enough data yet"
+            cells.append(_item(r["prog"], color, r["short"], sub, r["Goal"]))
         if heard["enough"] and heard["n_stars"]:
-            done = heard["n_addressed"] == heard["n_stars"]
-            lines.append(f"{'✅' if done else '⬜'} Standout Mentor comments addressed: **{heard['n_addressed']} of {heard['n_stars']}**")
-        st.markdown("\n\n".join(lines))
-        if funnel["show"] and funnel["invited"]:
-            st.caption(f"{funnel['completed']} of {funnel['invited']} invited Mentors finished this season.")
-        if len(judged) < len(goals):
-            st.caption("⚪ means fewer Mentors have answered than the privacy minimum, or no one has yet.")
+            p = heard["n_addressed"] / heard["n_stars"]
+            cells.append(_item(p, ui.BLUE if p >= 1 else ui.ORANGE, "Comments addressed", f"{heard['n_addressed']} of {heard['n_stars']} standout comments"))
+        st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 18px'>" + "".join(cells) + "</div>", unsafe_allow_html=True)
+        extra = f" {funnel['completed']} of {funnel['invited']} invited Mentors finished." if funnel["show"] and funnel["invited"] else ""
+        st.caption("Each ring shows progress toward its target. Grey means not enough answers yet." + extra)
     with right.container(border=True):
         st.markdown(f"#### Data readiness: {ready_pct}%")
-        st.progress(ready_pct / 100)
-        lines = []
-        for _, r in ready_tbl.iterrows():
-            if r["Status"] == "Ready":
-                lines.append(f"✅ {r['What it unlocks']}")
-            elif r["Status"] == "Building":
-                lines.append(f"🔄 {r['What it unlocks']} ({r['Progress']:.0%}). Needs: {r['What is needed'][0].lower() + r['What is needed'][1:]}")
-            else:
-                lines.append(f"⏳ {r['What it unlocks']}. Needs: {r['What is needed'][0].lower() + r['What is needed'][1:]}")
-        st.markdown("\n\n".join(lines))
-        st.caption("Ready means enough data to rely on. This is about the data, not a grade for the pilot.")
+        cells = []
+        for (_, r), short in zip(ready_tbl.iterrows(), READY_SHORT):
+            sub = {"Ready": "ready", "Building": "building", "Later": "later"}[r["Status"]]
+            cells.append(_item(r["Progress"], ui.BLUE, short, sub, f"{r['What it unlocks']}. Needs: {r['What is needed']}"))
+        st.markdown("<div style='display:grid;grid-template-columns:1fr 1fr;gap:12px 18px'>" + "".join(cells) + "</div>", unsafe_allow_html=True)
+        with st.expander("What each one needs"):
+            for _, r in ready_tbl.iterrows():
+                st.markdown(f"**{r['What it unlocks']}**: {r['What is needed']}")
+            st.caption("This is about the data, not a grade for the pilot.")
 
 
 def _readiness(data, all_seasons, k):
