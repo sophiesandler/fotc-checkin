@@ -140,75 +140,36 @@ def order_waves(df):
 
 
 # ---------------------------------------------------------------- dashboard
-def page_dashboard():
-    user = require("leader", "admin")
-    k = _k()
-    st.title("Dashboard")
-    stage_note()
-    st.caption(f"Group results by season. Groups smaller than {k} are hidden to protect privacy.")
-    source, data = pick_source()
-    if data.empty:
-        st.info("No check-ins yet. Sign in as a Mentor, complete a practice check-in, and come back, or switch to the demo data above.")
+NEAR = 0.15      # a fall this big counts toward the "needs attention" rules
+ARROW = 0.05     # a change this big gets an arrow
+DOT = {"Yes": "🔴", "Watch": "🟠", "No": "🟢"}
+
+
+def active_areas():
+    """The rating questions still being asked (retired questions drop out of every view)."""
+    asked = {q["id"] for q in db.get_published("questions")[1] if q.get("active", True)}
+    return [c for c in CORE if c in asked] or list(CORE)
+
+
+def _later_box(items):
+    """One plain list of what is not available yet and what unlocks it (replaces the blue 'nothing to show' banners)."""
+    if not items:
         return
-    rules, bands = risk.load_rules()
-    ev = risk.evaluate(data, rules, bands)
-    waves = order_waves(ev)
-    c1, c2, c3 = st.columns([2, 1, 1])
-    with c1:
-        sel = pick_wave(waves, "dash_wave")
-    has_tb, has_acc = ev["tb"].notna().any(), ev["restricted"].notna().any()
-    tb = c2.selectbox("Time as a Mentor", ["Everyone"] + TB, disabled=not has_tb)
-    acc = c3.selectbox("School-day access", ["All chapters", "Restricted", "Open"], disabled=not has_acc,
-                       help="Only available in the demo data, which includes chapters. Live check-ins are from one chapter.")
-    v = ev.copy()
-    if has_tb and tb != "Everyone":
-        v = v[v["tb"] == TB.index(tb)]
-    if has_acc and acc != "All chapters":
-        v = v[v["restricted"] == (1 if acc == "Restricted" else 0)]
-    wi = waves.index(sel)
-    prev_label = waves[wi - 1] if wi > 0 else None
-    cur = v[v["wave"] == sel]
-    prev = v[v["wave"] == prev_label] if prev_label else v.iloc[0:0]
-
-    n = cur["mentor"].nunique()
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Mentors with a check-in", n if n >= k else f"under {k}")
-    inten = mean_k(cur["C01"], k)
-    pin = mean_k(prev["C01"], k) if len(prev) else None
-    dlt = (inten - pin) if inten is not None and pin is not None else None
-    m2.metric("Average intent to stay (1 to 5)", f"{inten:.1f}" if inten is not None else f"under {k}",
-              delta=(f"{dlt:+.1f}" if dlt is not None and abs(dlt) >= 0.05 else None))
-    flagged = (cur["band"] != "Low").sum()
-    m3.metric("With a support signal", f"{flagged / len(cur) * 100:.0f}%" if len(cur) >= k else f"under {k}",
-              help="Mentors whose answers match the indicator rules set on the Support signals page. It is a prompt to offer support, not a judgment.")
-    if cur["left_next"].notna().any():
-        left = int(cur["left_next"].sum())
-        m4.metric("Left before next season", left if left >= k else f"under {k}")
-    else:
-        m4.metric("Left before next season", "pending")
-
-    t_trend, t_theme = st.tabs(["Trends", "Themes"])
-    with t_trend:
-        _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb)
-    with t_theme:
-        _themes(source, v, waves, sel, k)
+    with st.container(border=True):
+        st.markdown("#### Unlocks later")
+        st.markdown("\n\n".join(f"⏳ **{name}**: {need}" for name, need in items))
 
 
-def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
-    # ---- season-by-season scorecard: arrows show the change since the season before
-    means = {item: [mean_k(v[v["wave"] == w][item], k) for w in waves] for item in CORE}
-    ABBR = {"Winter": "Win", "Spring": "Spr", "Summer": "Sum", "Fall": "Fall"}
-    short = lambda lbl: f"{ABBR[seasons.parse(lbl)[0]]} {str(seasons.parse(lbl)[1])[-2:]}"
-    heads = [short(w) for w in waves]
-    NEAR = 0.15      # a fall this big counts toward the 'Needs attention?' rules
-    ARROW = 0.05     # a change this big gets an arrow
+def _verdicts(v, areas, means, sel, wi, k):
+    """For each area: ('Yes' | 'Watch' | 'No' | '—', short reason). The rules are unchanged from before."""
     cur_v = v[v["wave"] == sel]
-
-    def verdict(item):
+    out = {}
+    for item in areas:
         series = means[item]
         now_v = series[wi]
         if now_v is None:
-            return "—", ""
+            out[item] = ("—", "")
+            continue
         before = series[wi - 1] if wi > 0 else None
         before2 = series[wi - 2] if wi > 1 else None
         s_ = cur_v[item].dropna()
@@ -227,13 +188,100 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
         if now_v < 3.3:
             why_watch.append("average below 3.3")
         if why_yes:
-            return "Yes", "; ".join(why_yes)
-        if why_watch:
-            return "Watch", "; ".join(why_watch)
-        return "No", ""
+            out[item] = ("Yes", "; ".join(why_yes))
+        elif why_watch:
+            out[item] = ("Watch", "; ".join(why_watch))
+        else:
+            out[item] = ("No", "")
+    return out
 
-    table_rows, flagged = [], []
-    for item in CORE:
+
+def _strip(cur, areas, means, verdicts, wi, prev_label, sel, k):
+    """'What changed': a few plain lines built from the real numbers."""
+    lines = []
+    if prev_label is None:
+        lines.append("First season: there is nothing to compare with yet. Next season this box shows what moved.")
+    else:
+        ch = [(SHORT[i], means[i][wi] - means[i][wi - 1]) for i in areas if means[i][wi] is not None and means[i][wi - 1] is not None]
+        if not ch:
+            lines.append(f"Not enough answers in both {prev_label} and {sel} to compare.")
+        else:
+            up = max(ch, key=lambda x: x[1])
+            down = min(ch, key=lambda x: x[1])
+            if up[1] >= ARROW:
+                lines.append(f"▲ **{up[0]}** is up {up[1]:.1f} since {prev_label}.")
+            if down[1] <= -ARROW:
+                lines.append(f"▼ **{down[0]}** is down {abs(down[1]):.1f} since {prev_label}.")
+            if up[1] < ARROW and down[1] > -ARROW:
+                lines.append(f"Ratings are steady since {prev_label}.")
+    shown = [i for i in areas if verdicts[i][0] != "—"]
+    yes = [SHORT[i] for i in shown if verdicts[i][0] == "Yes"]
+    watch = [SHORT[i] for i in shown if verdicts[i][0] == "Watch"]
+    if yes:
+        lines.append(f"🔴 **Needs attention:** {'; '.join(yes)}.")
+    if watch:
+        lines.append(f"🟠 **Watch:** {'; '.join(watch)}.")
+    if shown and not yes and not watch:
+        lines.append("🟢 No area needs attention.")
+    n = cur["mentor"].nunique()
+    if n < k:
+        lines.append(f"Fewer than {k} Mentors have a check-in this season, so results are hidden to protect privacy.")
+    else:
+        flagged = int((cur["band"] != "Low").sum())
+        lines.append(f"{n} Mentors with a check-in. {flagged} have a support signal (see Support signals).")
+    with st.container(border=True):
+        st.markdown(f"#### What changed in {sel}")
+        st.markdown("\n\n".join(lines))
+
+
+def page_dashboard():
+    user = require("leader", "admin")
+    k = _k()
+    st.title("Dashboard")
+    st.caption(f"What changed since last season, and where to focus. Groups smaller than {k} are hidden to protect privacy.")
+    source, data = pick_source()
+    if data.empty:
+        st.info("No check-ins yet. Sign in as a Mentor, complete a practice check-in, and come back, or switch to the demo data above.")
+        return
+    rules, bands = risk.load_rules()
+    ev = risk.evaluate(data, rules, bands)
+    waves = order_waves(ev)
+    has_tb = ev["tb"].notna().any()
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        sel = pick_wave(waves, "dash_wave")
+    tb = c2.selectbox("Time as a Mentor", ["Everyone"] + TB) if has_tb else "Everyone"
+    v = ev.copy()
+    if has_tb and tb != "Everyone":
+        v = v[v["tb"] == TB.index(tb)]
+    wi = waves.index(sel)
+    prev_label = waves[wi - 1] if wi > 0 else None
+    cur = v[v["wave"] == sel]
+    areas = active_areas()
+    means = {item: [mean_k(v[v["wave"] == w][item], k) for w in waves] for item in areas}
+    verdicts = _verdicts(v, areas, means, sel, wi, k)
+
+    _strip(cur, areas, means, verdicts, wi, prev_label, sel, k)
+
+    t_trend, t_theme = st.tabs(["Trends", "Themes"])
+    with t_trend:
+        _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, areas, means, verdicts)
+    with t_theme:
+        _themes(source, v, waves, sel, k)
+    st.caption("Dashboard page version 2. You can delete this line once you have confirmed the update.")
+
+
+def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, areas, means, verdicts):
+    later = []
+    long_order = [LONG[c] for c in areas]
+    short_order = [SHORT[c] for c in areas]
+    ABBR = {"Winter": "Win", "Spring": "Spr", "Summer": "Sum", "Fall": "Fall"}
+    short = lambda lbl: f"{ABBR[seasons.parse(lbl)[0]]} {str(seasons.parse(lbl)[1])[-2:]}"
+    heads = [short(w) for w in waves]
+
+    # ---- scorecard: arrows show the change since the season before; the last column gives a one-line reason
+    table_rows = []
+    for item in areas:
         row = {"What Mentors told us": LONG[item]}
         for i, w in enumerate(waves):
             m = means[item][i]
@@ -248,10 +296,8 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
                 row[heads[i]] = f"▼ {m:.1f}"
             else:
                 row[heads[i]] = f"– {m:.1f}"
-        flag, why = verdict(item)
-        row["Needs attention?"] = flag
-        if flag in ("Yes", "Watch"):
-            flagged.append((LONG[item], flag, why))
+        flag, why = verdicts[item]
+        row["Needs attention?"] = "—" if flag == "—" else (f"{DOT[flag]} {why[0].upper() + why[1:]}" if why else f"{DOT[flag]} OK")
         table_rows.append(row)
     sc = pd.DataFrame(table_rows)
 
@@ -263,93 +309,100 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
             return "color:#C62828;font-weight:700"
         return "color:#555555"
 
-    def risk_color(x):
-        return {"Yes": "background-color:#C62828;color:white;font-weight:700", "Watch": "background-color:#FFD9A0;color:#282828;font-weight:700",
-                "No": "background-color:#D6EFD9;color:#1B5E20;font-weight:700"}.get(x, "")
-
-    ui.section("Season by season scorecard", "Purpose: see how each area is doing and which way it is moving. How to use: read across a row to follow one area through the seasons, check the arrow for the change since the season before, and look at the last column for areas that need attention.")
-    styled = sc.style.map(arrow_color, subset=heads).map(risk_color, subset=["Needs attention?"])
+    st.subheader("Scorecard")
+    st.caption("Average answer each season, from 1 (low) to 5 (high). ▲ means it rose since the season before, ▼ means it fell.")
+    styled = sc.style.map(arrow_color, subset=heads)
     if short(sel) in heads:
         styled = styled.set_properties(subset=[short(sel)], **{"background-color": "#EEF5FB"})
-    st.dataframe(styled, hide_index=True, width="stretch", height=int(35.5 * (len(sc) + 1)))
-    st.markdown(
-        "**How to read this table.** Each box is the average answer that season (1 is low, 5 is high). "
-        "<span style='color:#1B7F3B;font-weight:700'>▲ green</span> means the average rose since the season before. "
-        "<span style='color:#C62828;font-weight:700'>▼ red</span> means it fell. "
-        "<span style='color:#555;font-weight:700'>–</span> means about the same (within 0.05). The first season has no arrow, and a dash means fewer than "
-        f"{k} answers. The shaded column is the season you picked.", unsafe_allow_html=True)
-    st.markdown(
-        "**Needs attention?** &nbsp;**Yes**: the average is below 3.0, 1 in 4 Mentors rated it low (1 or 2), or it fell two seasons in a row. &nbsp;"
-        "**Watch**: it fell this season, 15% or more rated it low, or the average is below 3.3. &nbsp;**No**: none of these.")
-    if flagged:
-        st.caption("Flagged in " + sel + ": " + " | ".join(f"{n} ({f.lower()}: {w})" for n, f, w in flagged))
+    st.dataframe(styled, hide_index=True, width="stretch", height=int(35.5 * (len(sc) + 1)),
+                 column_config={"What Mentors told us": st.column_config.TextColumn(width="large"), "Needs attention?": st.column_config.TextColumn(width="large")})
+    with st.popover("How are these decided?"):
+        st.markdown("**Numbers:** each box is the average answer that season. ▲ rose and ▼ fell by 0.05 or more since the season before. – means about the same. "
+                    f"The first season has no arrow, and a dash means fewer than {k} answers. The shaded column is the season you picked.")
+        st.markdown("**🔴 Needs attention:** the average is below 3.0, 1 in 4 Mentors rated it low (1 or 2), or it fell two seasons in a row.")
+        st.markdown("**🟠 Watch:** it fell this season, 15% or more rated it low, or the average is below 3.3.")
+        st.markdown("**🟢 OK:** none of these.")
 
-    # ---- biggest movers and same season last year
-    left_, right_ = st.columns(2)
-    with left_:
-        ui.section("Biggest movers since last season", "Purpose: spot which areas changed most. How to use: start with the longest bars. Blue bars rose and orange bars fell.")
-        if prev_label is None:
-            st.info("This is the first season, so there is nothing to compare with.")
-        else:
-            mv = [{"Area": SHORT[i], "Change": means[i][wi] - means[i][wi - 1]} for i in CORE if means[i][wi] is not None and means[i][wi - 1] is not None]
+    # ---- compare: one place, one choice
+    ly = seasons.same_last_year(sel)
+    options = []
+    if prev_label is not None:
+        options.append("Since last season")
+    else:
+        later.append(("Biggest movers", "needs a second season with 5+ Mentors"))
+    if ly in waves:
+        options.append("Same season last year")
+    else:
+        later.append(("Same season, last year", f"needs check-ins from {ly}"))
+    if len(waves) >= 2:
+        options += ["All seasons", "Areas over time"]
+    if options:
+        st.subheader("Compare seasons")
+        mode = st.radio("Compare", options, horizontal=True, key="dash_cmp", label_visibility="collapsed")
+        if mode == "Since last season":
+            mv = [{"Area": SHORT[i], "Change": means[i][wi] - means[i][wi - 1]} for i in areas if means[i][wi] is not None and means[i][wi - 1] is not None]
             if not mv:
-                st.info(f"Not enough answers in both seasons to compare.")
+                st.caption("Not enough answers in both seasons to compare.")
             else:
                 mvd = pd.DataFrame(mv)
                 mvd["Direction"] = np.where(mvd["Change"] >= 0, "Up", "Down")
                 bar = alt.Chart(mvd).mark_bar().encode(
                     x=alt.X("Change:Q", title="Change in average"), y=alt.Y("Area:N", sort=alt.EncodingSortField("Change", order="descending"), title=None),
                     color=alt.Color("Direction:N", scale=alt.Scale(domain=["Up", "Down"], range=[BLUE_, ORANGE_]), legend=None))
-                plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.2f")), 300)
-                st.caption(f"{prev_label} to {sel}. Blue means higher, orange means lower.")
-    with right_:
-        ui.section("Same season, last year", "Purpose: compare with the same season a year ago, so summer is compared with summer. How to use: a long line between the grey dot (last year) and the blue dot (this year) is a big change.")
-        ly = seasons.same_last_year(sel)
-        if ly not in waves:
-            st.info(f"There are no check-ins from {ly} to compare with yet.")
-        else:
+                plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.2f")), 260)
+                st.caption(f"{prev_label} to {sel}. Blue bars rose and orange bars fell. Start with the longest bars.")
+        elif mode == "Same season last year":
             recs = []
-            for item in CORE:
+            for item in areas:
                 a, b = mean_k(v[v["wave"] == ly][item], k), mean_k(v[v["wave"] == sel][item], k)
                 if a is not None and b is not None:
                     recs.append({"Area": SHORT[item], "Last": a, "This": b})
             if recs:
                 dd = pd.DataFrame(recs)
-                ysel = alt.Y("Area:N", sort=SHORT_ORDER, title=None, axis=alt.Axis(labelLimit=220))
+                ysel = alt.Y("Area:N", sort=short_order, title=None, axis=alt.Axis(labelLimit=220))
                 xs = alt.Scale(domain=[2.5, 4.5])
                 rule = alt.Chart(dd).mark_rule(color="#BDBDBD", strokeWidth=4).encode(y=ysel, x=alt.X("Last:Q", scale=xs, title="Average (1 to 5)"), x2="This:Q")
                 p_last = alt.Chart(dd).mark_point(filled=True, size=140, color="#919191").encode(y=ysel, x=alt.X("Last:Q", scale=xs))
                 p_this = alt.Chart(dd).mark_point(filled=True, size=140, color=BLUE_).encode(y=ysel, x=alt.X("This:Q", scale=xs))
-                plot(rule + p_last + p_this, 300)
-                st.caption(f"Grey dot: {ly}. Blue dot: {sel}. The line between them shows how far the average moved.")
+                plot(rule + p_last + p_this, 260)
+                st.caption(f"Grey dot: {ly}. Blue dot: {sel}. A long line is a big change.")
             else:
-                st.info("Not enough answers in both seasons to compare.")
+                st.caption("Not enough answers in both seasons to compare.")
+        elif mode == "All seasons":
+            recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in areas for i, w in enumerate(waves) if means[item][i] is not None]
+            if recs:
+                base = alt.Chart(pd.DataFrame(recs)).encode(x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                                           y=alt.Y("Area:N", sort=long_order, title=None))
+                rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
+                    color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
+                txt = base.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f"))
+                plot(rect + txt, 300)
+                st.caption("Blue is higher, orange is lower. Look across a row for a lasting concern, and down a column for a season that was hard for everyone.")
+            else:
+                st.caption("Not enough answers to show.")
+        else:
+            picks = st.multiselect("Areas to compare", long_order, default=long_order[:3], key="cmp_areas")
+            recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in areas for i, w in enumerate(waves)
+                    if means[item][i] is not None and LONG[item] in picks]
+            if recs:
+                plot(alt.Chart(pd.DataFrame(recs)).mark_line(point=alt.OverlayMarkDef(size=60), strokeWidth=3).encode(
+                    x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
+                    color=alt.Color("Area:N", scale=alt.Scale(range=[BLUE_, ORANGE_, "#282828", "#919191", "#1A74B8", "#F7B89E", "#265A82"]))), 300)
+            else:
+                st.caption("Pick at least one area.")
 
-    # ---- heatmap: area by season
-    ui.section("Averages by season", "Purpose: see every area in every season on one page. How to use: look across a row for an area that stays orange (a lasting concern), and down a column for a season that was hard for everyone.")
-    recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in CORE for i, w in enumerate(waves) if means[item][i] is not None]
-    hm = pd.DataFrame(recs)
-    if not hm.empty:
-        base = alt.Chart(hm).encode(x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-                                    y=alt.Y("Area:N", sort=LONG_ORDER, title=None))
-        rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
-            color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
-        txt = base.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f"))
-        plot(rect + txt, 300)
-        st.caption("Blue is higher, orange is lower, grey is in the middle. Colors compare areas and seasons with each other, so a small color change is a small difference.")
-
-    # ---- heatmap: time as a Mentor by season
-    ui.section("Answers by time as a Mentor", "Purpose: check whether newer and longer-serving Mentors feel differently. How to use: pick an area, then compare the rows. A gap between first-year and later Mentors may point to onboarding or experience.")
+    # ---- time as a Mentor: only when that detail has been collected
     if not has_tb:
-        st.info("Live check-ins do not record how long each Mentor has been in the role yet, so this view uses the demo data.")
+        later.append(("Answers by time as a Mentor", "needs each Mentor's time in the role to be collected, with 5+ Mentors in each group"))
     else:
-        area = st.selectbox("Area", LONG_ORDER, key="tb_area")
-        item = next(i for i, name in LONG.items() if name == area)
-        base_df = ev if not has_acc or acc == "All chapters" else ev[ev["restricted"] == (1 if acc == "Restricted" else 0)]
+        st.subheader("Answers by time as a Mentor")
+        st.caption("A gap between first-year and later Mentors may point to onboarding or experience.")
+        area = st.selectbox("Area", long_order, key="tb_area")
+        item = next(i for i in areas if LONG[i] == area)
         recs = []
         for w in waves:
             for gi, g in enumerate(TB):
-                m = mean_k(base_df[(base_df["wave"] == w) & (base_df["tb"] == gi)][item], k)
+                m = mean_k(ev[(ev["wave"] == w) & (ev["tb"] == gi)][item], k)
                 if m is not None:
                     recs.append({"Season": w, "Group": g, "Average": m})
         if recs:
@@ -358,156 +411,139 @@ def _trends(v, ev, waves, sel, wi, prev_label, k, has_tb, has_acc, acc, tb):
             plot(b2.mark_rect(stroke="white", strokeWidth=2).encode(color=alt.Color("Average:Q", scale=alt.Scale(domain=[2.8, 3.5, 4.2], range=[ORANGE_, "#F3F3F3", BLUE_]), legend=None))
                  + b2.mark_text(fontSize=14, fontWeight="bold", color="#282828").encode(text=alt.Text("Average:Q", format=".1f")), 190)
         else:
-            st.info(f"Each group needs at least {k} answers to be shown.")
-
-    # ---- more detail, tucked away
-    with st.expander("Compare areas over time"):
-        st.caption("Purpose: follow a few areas on one chart. How to use: choose the areas, then follow each line across the seasons.")
-        picks = st.multiselect("Areas to compare", LONG_ORDER, default=[LONG["C01"], LONG["C02"], LONG["C03"]], key="cmp_areas")
-        recs = [{"Season": w, "Area": LONG[item], "Average": means[item][i]} for item in CORE for i, w in enumerate(waves)
-                if means[item][i] is not None and LONG[item] in picks]
-        if recs:
-            plot(alt.Chart(pd.DataFrame(recs)).mark_line(point=alt.OverlayMarkDef(size=60), strokeWidth=3).encode(
-                x=alt.X("Season:N", sort=waves, title=None, axis=alt.Axis(labelAngle=0)), y=alt.Y("Average:Q", scale=alt.Scale(domain=[1, 5]), title="Average (1 to 5)"),
-                color=alt.Color("Area:N", scale=alt.Scale(range=[BLUE_, ORANGE_, "#282828", "#919191", "#1A74B8", "#F7B89E", "#265A82"]))), 300)
-        else:
-            st.info("Pick at least one area.")
-    with st.expander(f"How answers were spread in {sel}"):
-        st.caption("Purpose: see the whole range of answers, not just the average. How to use: a large orange segment means many Mentors rated that area low.")
-        cur_ = v[v["wave"] == sel]
-        mix = []
-        for item in CORE:
-            sr = cur_[item].dropna()
-            if len(sr) >= k:
-                for score in range(1, 6):
-                    mix.append({"Area": LONG[item], "Score": str(score), "Share": float((sr == score).mean())})
-        if mix:
-            plot(alt.Chart(pd.DataFrame(mix)).mark_bar().encode(
-                x=alt.X("Share:Q", axis=alt.Axis(format="%"), title=None, stack="zero"), y=alt.Y("Area:N", sort=LONG_ORDER, title=None),
-                color=alt.Color("Score:N", scale=alt.Scale(domain=["1", "2", "3", "4", "5"], range=[ui.SCALE[i] for i in range(1, 6)]),
-                                legend=alt.Legend(title="Score (1 low, 5 high)", orient="bottom", direction="horizontal")), order=alt.Order("Score:N")), 300)
+            st.caption(f"Each group needs at least {k} answers to be shown.")
+    _later_box(later)
 
 
 def _themes(source, v, waves, sel, k):
     """Theme explorer: what Mentors said in their spoken answers, by season."""
+    later = []
     names = {t["id"]: t["name"] for t in db.get_published("codebook")[1]["themes"]}
     tg = demo_tags() if source == "demo" else live_tags()
     if tg.empty:
         st.info("No tagged answers yet. Spoken answers become themes once they are transcribed and tagged. This happens automatically once transcription and tagging are turned on in Settings. "
                 "Switch to the demo data above to see how this tab will look.")
+        later.append(("Why people left", f"needs {k}+ exit interviews with the same main reason"))
+        _why_left(source, names, k, later)
+        _later_box(later)
+        return
+    if source == "demo":
+        st.caption("Themes come from synthetic spoken answers tagged for the demo. The quotes are illustrative examples written for the demo, not real Mentors.")
     else:
-        if source == "demo":
-            st.caption("Themes come from synthetic spoken answers tagged for the demo. The quotes are illustrative examples written for the demo, not real Mentors.")
-        else:
-            st.caption("Themes come from spoken answers tagged automatically by AI. Answers the AI flags for support, or that could not be tagged, go to the Review queue for a person.")
-        tw = [w for w in waves if w in set(tg["wave"])]
-        den = tg.groupby("wave")["mentor"].nunique()
-        mode = st.radio("Show", ["What is hard", "What is working"], horizontal=True, key="theme_mode")
-        val = "Negative" if mode == "What is hard" else "Positive"
-        sub = tg[(tg["valence"] == val) & (tg["theme"] != "T10")]
-        cnt = sub.groupby(["wave", "theme"])["mentor"].nunique().reset_index(name="n")
-        BINS = [(0.25, "25% or more"), (0.20, "20-24%"), (0.15, "15-19%"), (0.10, "10-14%"), (0.0, "Under 10%")]
-        ORDER = ["Under 10%", "10-14%", "15-19%", "20-24%", "25% or more"]
-        PALETTE = (["#FDE8DF", "#F9C3AD", "#F59C78", "#EC6237", "#B8431B"] if val == "Negative"
-                   else ["#E3F1FB", "#BDDDF5", "#8CC5EE", "#4CA7E8", "#1A74B8"])
-        bucket = lambda sh: next(lab for lo, lab in BINS if sh >= lo)
-        recs = []
-        for w in tw:
-            for t_, nm in names.items():
-                if t_ == "T10":
-                    continue
+        st.caption("Themes come from spoken answers tagged automatically by AI. Answers the AI flags for support, or that could not be tagged, go to the Review queue for a person.")
+    tw = [w for w in waves if w in set(tg["wave"])]
+    den = tg.groupby("wave")["mentor"].nunique()
+    mode = st.radio("Show", ["What is hard", "What is working"], horizontal=True, key="theme_mode")
+    val = "Negative" if mode == "What is hard" else "Positive"
+    sub = tg[(tg["valence"] == val) & (tg["theme"] != "T10")]
+    cnt = sub.groupby(["wave", "theme"])["mentor"].nunique().reset_index(name="n")
+    BINS = [(0.25, "25% or more"), (0.20, "20-24%"), (0.15, "15-19%"), (0.10, "10-14%"), (0.0, "Under 10%")]
+    ORDER = ["Under 10%", "10-14%", "15-19%", "20-24%", "25% or more"]
+    PALETTE = (["#FDE8DF", "#F9C3AD", "#F59C78", "#EC6237", "#B8431B"] if val == "Negative"
+               else ["#E3F1FB", "#BDDDF5", "#8CC5EE", "#4CA7E8", "#1A74B8"])
+    bucket = lambda sh: next(lab for lo, lab in BINS if sh >= lo)
+    recs = []
+    for w in tw:
+        for t_, nm in names.items():
+            if t_ == "T10":
+                continue
+            n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
+            if den.get(w, 0) >= k and n_ >= k:
+                recs.append({"Season": w, "Theme": THEME_SHORT.get(t_, nm), "Share": n_ / den[w], "Mentors": int(n_), "Bucket": bucket(n_ / den[w])})
+    what = "was hard" if val == "Negative" else "is working"
+    if recs:
+        st.subheader("Share of Mentors mentioning each theme")
+        st.caption(f"Share of Mentors who mentioned the theme when asked what {what} for them that season. Darker means more Mentors. A blank box means fewer than {k}.")
+        hm = pd.DataFrame(recs)
+        base = alt.Chart(hm).encode(x=alt.X("Season:N", sort=tw, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
+                                    y=alt.Y("Theme:N", sort=alt.EncodingSortField("Share", op="sum", order="descending"), title=None, axis=alt.Axis(labelLimit=340)))
+        rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
+            color=alt.Color("Bucket:N", sort=ORDER, scale=alt.Scale(domain=ORDER, range=PALETTE),
+                            legend=alt.Legend(title="Share of Mentors:", orient="bottom", direction="horizontal", symbolType="square", symbolSize=260,
+                                              titleFontSize=13, labelFontSize=12)))
+        txt = base.mark_text(fontSize=13, fontWeight="bold").encode(
+            text=alt.Text("Share:Q", format=".0%"),
+            color=alt.condition(alt.datum.Bucket == "25% or more", alt.value("white"), alt.value("#282828")))
+        plot(rect + txt, 430)
+        st.caption("Life changes outside work are counted in totals only and never shown here.")
+    else:
+        later.append(("Theme heatmap", f"needs {k}+ Mentors mentioning the same theme in a season"))
+
+    wi = tw.index(sel) if sel in tw else None
+    grow = None
+    if wi is not None and wi > 0:
+        pr = tw[wi - 1]
+        ch = []
+        for t_, nm in names.items():
+            if t_ == "T10":
+                continue
+
+            def share(w, t_=t_):
                 n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
-                if den.get(w, 0) >= k and n_ >= k:
-                    recs.append({"Season": w, "Theme": THEME_SHORT.get(t_, nm), "Share": n_ / den[w], "Mentors": int(n_), "Bucket": bucket(n_ / den[w])})
-        ui.section("Share of Mentors mentioning each theme", "Purpose: see which themes come up most and whether they are growing. How to use: darker boxes mean more Mentors mentioned the theme. The key below the chart explains the colors.")
-        what = "was hard" if val == "Negative" else "is working"
-        st.markdown(f"Each box shows the share of Mentors who said something about this theme when asked what {what} for them that season. "
-                    f"**The darker the box, the more Mentors mentioned it.** The key under the chart shows what each color means. "
-                    f"A blank box means fewer than {k} Mentors mentioned it.")
-        if recs:
-            hm = pd.DataFrame(recs)
-            base = alt.Chart(hm).encode(x=alt.X("Season:N", sort=tw, title=None, axis=alt.Axis(labelAngle=0, orient="top")),
-                                        y=alt.Y("Theme:N", sort=alt.EncodingSortField("Share", op="sum", order="descending"), title=None, axis=alt.Axis(labelLimit=340)))
-            rect = base.mark_rect(stroke="white", strokeWidth=2).encode(
-                color=alt.Color("Bucket:N", sort=ORDER, scale=alt.Scale(domain=ORDER, range=PALETTE),
-                                legend=alt.Legend(title="Share of Mentors:", orient="bottom", direction="horizontal", symbolType="square", symbolSize=260,
-                                                  titleFontSize=13, labelFontSize=12)))
-            txt = base.mark_text(fontSize=13, fontWeight="bold").encode(
-                text=alt.Text("Share:Q", format=".0%"),
-                color=alt.condition(alt.datum.Bucket == "25% or more", alt.value("white"), alt.value("#282828")))
-            plot(rect + txt, 430)
-            st.caption("Life changes outside work are counted in totals only and never shown here.")
-        else:
-            st.info(f"No theme was mentioned by {k} or more Mentors yet.")
+                return n_ / den[w] if den.get(w, 0) >= k and n_ >= k else None
+            a, b = share(pr), share(sel)
+            if a is not None and b is not None:
+                ch.append({"Theme": THEME_SHORT.get(t_, nm), "Change": b - a})
+        grow = (pr, pd.DataFrame(ch)) if ch else None
+    if grow is None:
+        later.append(("Themes growing or shrinking", f"needs two seasons of tagged answers with {k}+ Mentors on a theme"))
+    else:
+        pr, cd = grow
+        st.subheader("Concerns growing or shrinking?" if val == "Negative" else "Strengths growing or shrinking?")
+        better = (cd["Change"] <= 0) if val == "Negative" else (cd["Change"] >= 0)
+        cd["Direction"] = np.where(better, "Moving in a better direction", "Moving in a worse direction")
+        bar = alt.Chart(cd).mark_bar().encode(
+            x=alt.X("Change:Q", axis=alt.Axis(format="+%"), title="Fewer Mentors mentioned it   <   0   >   More Mentors mentioned it"),
+            y=alt.Y("Theme:N", sort=alt.EncodingSortField("Change", order="descending"), title=None, axis=alt.Axis(labelLimit=340)),
+            color=alt.Color("Direction:N", scale=alt.Scale(domain=["Moving in a better direction", "Moving in a worse direction"], range=[BLUE_, ORANGE_]),
+                            legend=alt.Legend(orient="bottom", direction="horizontal", symbolType="square", symbolSize=260)))
+        plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.0%")), 380)
+        st.caption(f"Change in the share of Mentors mentioning each theme, {pr} to {sel}. "
+                   + ("Blue is good news (fewer concerns). Orange is a concern growing." if val == "Negative" else "Blue is good news (a strength growing). Orange is a strength fading."))
 
-        ui.section("Concerns growing or shrinking?" if val == "Negative" else "Strengths growing or shrinking?", "Purpose: see which themes are rising or falling since last season. How to use: bars to the right mean more Mentors mentioned the theme. Blue is good news and orange is a worry.")
-        wi = tw.index(sel) if sel in tw else None
-        if wi is None or wi == 0:
-            st.info("This compares a season with the one before it, so it needs at least two seasons of tagged answers.")
-        else:
-            pr = tw[wi - 1]
-            ch = []
-            for t_, nm in names.items():
-                if t_ == "T10":
-                    continue
-                def share(w):
-                    n_ = cnt[(cnt["wave"] == w) & (cnt["theme"] == t_)]["n"].sum()
-                    return n_ / den[w] if den.get(w, 0) >= k and n_ >= k else None
-                a, b = share(pr), share(sel)
-                if a is not None and b is not None:
-                    ch.append({"Theme": THEME_SHORT.get(t_, nm), "Change": b - a})
-            if ch:
-                cd = pd.DataFrame(ch)
-                better = (cd["Change"] <= 0) if val == "Negative" else (cd["Change"] >= 0)
-                cd["Direction"] = np.where(better, "Moving in a better direction", "Moving in a worse direction")
-                bar = alt.Chart(cd).mark_bar().encode(
-                    x=alt.X("Change:Q", axis=alt.Axis(format="+%"), title="Fewer Mentors mentioned it   <   0   >   More Mentors mentioned it"),
-                    y=alt.Y("Theme:N", sort=alt.EncodingSortField("Change", order="descending"), title=None, axis=alt.Axis(labelLimit=340)),
-                    color=alt.Color("Direction:N", scale=alt.Scale(domain=["Moving in a better direction", "Moving in a worse direction"], range=[BLUE_, ORANGE_]),
-                                    legend=alt.Legend(orient="bottom", direction="horizontal", symbolType="square", symbolSize=260)))
-                plot(bar + bar.mark_text(align="left", dx=4, color="#282828").encode(text=alt.Text("Change:Q", format="+.0%")), 380)
-                st.caption(f"Change in the share of Mentors mentioning each theme, {pr} to {sel}. A bar to the right means more Mentors mentioned it. "
-                           + ("Blue is good news (fewer concerns). Orange is a concern growing." if val == "Negative" else "Blue is good news (a strength growing). Orange is a strength fading."))
-            else:
-                st.info("Not enough answers in both seasons to compare themes.")
-
-        ui.section("In their words", "Purpose: put real voices next to the numbers. How to use: pick a theme and a season to read excerpts from Mentors' answers.")
-        qs = sub[(sub["quote"] != "") & (sub["aggregate_only"].astype(int) == 0)]
+    qs = sub[(sub["quote"] != "") & (sub["aggregate_only"].astype(int) == 0)]
+    tl = [t_ for t_ in names if t_ != "T10" and (qs["theme"] == t_).any()]
+    if not tl:
+        later.append(("In their words", "needs tagged answers with quotes"))
+    else:
+        st.subheader("In their words")
+        st.caption("Pick a theme and a season to read excerpts from Mentors' answers.")
         c1, c2 = st.columns(2)
-        tl = [t_ for t_ in names if t_ != "T10" and (qs["theme"] == t_).any()]
-        if not tl:
-            st.info("No excerpts to show yet.")
+        tsel = c1.selectbox("Theme", tl, format_func=lambda t_: f"{names[t_]} ({int((qs['theme'] == t_).sum())})")
+        ssel = c2.selectbox("Season", ["All seasons"] + list(reversed(tw)), index=(1 + list(reversed(tw)).index(sel)) if sel in tw else 0)
+        pick = qs[qs["theme"] == tsel]
+        if ssel != "All seasons":
+            pick = pick[pick["wave"] == ssel]
+        if len(pick) and pick["mentor"].nunique() < k:
+            st.caption(f"Fewer than {k} Mentors have excerpts here, so they are hidden to protect privacy.")
         else:
-            tsel = c1.selectbox("Theme", tl, format_func=lambda t_: f"{names[t_]} ({int((qs['theme'] == t_).sum())})")
-            ssel = c2.selectbox("Season", ["All seasons"] + list(reversed(tw)), index=(1 + list(reversed(tw)).index(sel)) if sel in tw else 0)
-            pick = qs[qs["theme"] == tsel]
-            if ssel != "All seasons":
-                pick = pick[pick["wave"] == ssel]
-            if len(pick) and pick["mentor"].nunique() < k:
-                st.info(f"Fewer than {k} Mentors have excerpts here, so they are hidden to protect privacy.")
-            else:
-                uniq = (pick.sort_values("t", ascending=False).groupby("quote", sort=False)
-                        .agg(wave=("wave", "first"), n=("mentor", "nunique")).reset_index().head(8))
-                for _, row in uniq.iterrows():
-                    more = f" · similar answers from {row['n']} Mentors" if row["n"] >= k else ""
-                    st.markdown(f"> “{row['quote']}”  \n> <span style='color:#555'>{row['wave']}{more}</span>", unsafe_allow_html=True)
-            st.caption("Excerpts are copied exactly from answers. Names are never shown. Anything that raised a safety concern is handled by a person outside the dashboard.")
+            uniq = (pick.sort_values("t", ascending=False).groupby("quote", sort=False)
+                    .agg(wave=("wave", "first"), n=("mentor", "nunique")).reset_index().head(8))
+            for _, row in uniq.iterrows():
+                more = f" · similar answers from {row['n']} Mentors" if row["n"] >= k else ""
+                st.markdown(f"> “{row['quote']}”  \n> <span style='color:#555'>{row['wave']}{more}</span>", unsafe_allow_html=True)
+        st.caption("Excerpts are copied exactly from answers. Names are never shown. Anything that raised a safety concern is handled by a person outside the dashboard.")
 
-    ui.section("Why people left", "Purpose: learn the main reasons Mentors chose to leave. How to use: look for reasons the program could change, then record what you do about them on the Pilot year page under You said, we did.")
+    _why_left(source, names, k, later)
+    _later_box(later)
+
+
+def _why_left(source, names, k, later):
     if source == "demo":
         ex = demo_exits()["top_reason"].map(lambda t_: names.get(t_, t_)).value_counts()
-        st.caption(f"Main reason chosen by the {int(ex.sum())} Mentors who completed an exit interview.")
     else:
         resp = pd.DataFrame(db.fetch_responses())
         ex = resp[(resp["qtype"] == "Checklist") & (resp["checklist_top"].fillna("") != "")]["checklist_top"].value_counts() if not resp.empty else pd.Series(dtype=int)
-        st.caption(f"Main reason chosen in {int(ex.sum())} exit interview(s).")
     shown = ex[ex >= k]
     if shown.empty:
-        st.info(f"No reason has {k} or more answers yet.")
-    else:
-        bar = shown.rename_axis("Reason").reset_index(name="Mentors")
-        ch = alt.Chart(bar).mark_bar(color=ORANGE_).encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=340)))
-        plot(ch + ch.mark_text(align="left", dx=4, color="#282828").encode(text="Mentors:Q"), 280)
+        if not any(n == "Why people left" for n, _ in later):
+            later.append(("Why people left", f"needs {k}+ exit interviews with the same main reason"))
+        return
+    st.subheader("Why people left")
+    st.caption(f"Main reason chosen by the {int(ex.sum())} Mentors who completed an exit interview. Record what you do about them on the Pilot year page under Our response.")
+    bar = shown.rename_axis("Reason").reset_index(name="Mentors")
+    ch = alt.Chart(bar).mark_bar(color=ORANGE_).encode(x=alt.X("Mentors:Q", title=None), y=alt.Y("Reason:N", sort="-x", title=None, axis=alt.Axis(labelLimit=340)))
+    plot(ch + ch.mark_text(align="left", dx=4, color="#282828").encode(text="Mentors:Q"), 280)
     if int((ex < k).sum()):
         st.caption(f"{int((ex < k).sum())} other reason(s) with fewer than {k} answers are hidden.")
 
