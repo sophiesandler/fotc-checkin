@@ -177,16 +177,7 @@ def page_pilot():
     ready_tbl, ready_pct = _readiness(data, all_seasons, k)
     heard = _excerpts(data, sel, k, admin)
 
-    left, right = st.columns([3, 1])
-    with left:
-        with st.container(border=True):
-            st.markdown(_summary(goals, funnel, changes, baseline, sel, heard))
-    with right:
-        n_ready = int((ready_tbl["Status"] == "Ready").sum())
-        st.metric("Data readiness", f"{ready_pct}%", help="How much of what this tool can show is ready to rely on. It is not a grade for the pilot.")
-        st.caption(f"{n_ready} of {len(ready_tbl)} views unlocked")
-    with st.expander("What is data readiness?"):
-        _readiness_detail(ready_tbl)
+    _checklist(goals, funnel, heard, ready_tbl, ready_pct)
     st.markdown("Jump to:  " + "  ·  ".join(f"[{t}](#{a})" for t, a in SECTIONS))
 
     _targets(goals, funnel, k, admin, user)
@@ -395,38 +386,40 @@ def _response(data, sel, cur_label, admin, user, example):
                 st.rerun()
 
 
-# ---------------------------------------------------------------- summary and readiness
-def _summary(goals, funnel, changes, baseline, sel, heard):
-    """Plain sentences built from fixed templates and the real numbers (nothing is free-written by AI)."""
+# ---------------------------------------------------------------- checklist and readiness
+def _checklist(goals, funnel, heard, ready_tbl, ready_pct):
+    """The top of the page: two plain checklists. Left: is the pilot on track? Right: what can the data support yet?"""
+    icon = {"Met": "✅", "Not yet": "🟠", "Not enough data": "⚪"}
     judged = goals[goals["Status"] != "Not enough data"]
-    if judged.empty:
-        first = "There is not enough data yet to judge the pilot targets."
-    else:
-        met = int((judged["Status"] == "Met").sum())
-        missing = list(judged[judged["Status"] == "Not yet"]["short"])
-        if not missing:
-            first = f"All {len(judged)} pilot targets are met."
-        else:
-            first = f"{met} of {len(judged)} pilot targets are met. Not yet: {', '.join(missing)}."
-        short_n = len(goals) - len(judged)
-        if short_n:
-            first += f" {short_n} more need{'s' if short_n == 1 else ''} more data."
-    parts = [first]
-    if funnel["show"] and funnel["invited"]:
-        s = f"{funnel['completed']} of {funnel['invited']} Mentors finished this season"
-        s += f", in a typical {funnel['med']:.1f} minutes." if funnel["med"] is not None else "."
-        parts.append(s)
-    if changes:
-        name, d = max(changes, key=lambda x: abs(x[1]))
-        if abs(d) >= 0.2:
-            parts.append(f"Compared with {baseline}, the biggest change is {name} ({'up' if d > 0 else 'down'} {abs(d):.1f}).")
-        else:
-            parts.append(f"Ratings are steady compared with {baseline}.")
-    elif sel == baseline:
-        parts.append(f"{baseline} is the baseline for future comparisons.")
-    if heard["enough"] and heard["n_stars"]:
-        parts.append(f"{heard['n_addressed']} of {heard['n_stars']} standout excerpt{' is' if heard['n_stars'] == 1 else 's are'} marked addressed.")
-    return " ".join(parts)
+    met = int((goals["Status"] == "Met").sum())
+    left, right = st.columns([3, 2])
+    with left.container(border=True):
+        st.markdown(f"#### Pilot checklist: {met} of {len(goals)} targets met")
+        lines = []
+        for _, r in goals.iterrows():
+            now = f"**{r['Now']}**" if r["Status"] != "Not enough data" else "not enough data yet"
+            lines.append(f"{icon[r['Status']]} {r['Goal']}: {now}")
+        if heard["enough"] and heard["n_stars"]:
+            done = heard["n_addressed"] == heard["n_stars"]
+            lines.append(f"{'✅' if done else '⬜'} Standout Mentor comments addressed: **{heard['n_addressed']} of {heard['n_stars']}**")
+        st.markdown("\n\n".join(lines))
+        if funnel["show"] and funnel["invited"]:
+            st.caption(f"{funnel['completed']} of {funnel['invited']} invited Mentors finished this season.")
+        if len(judged) < len(goals):
+            st.caption("⚪ means fewer Mentors have answered than the privacy minimum, or no one has yet.")
+    with right.container(border=True):
+        st.markdown(f"#### Data readiness: {ready_pct}%")
+        st.progress(ready_pct / 100)
+        lines = []
+        for _, r in ready_tbl.iterrows():
+            if r["Status"] == "Ready":
+                lines.append(f"✅ {r['What it unlocks']}")
+            elif r["Status"] == "Building":
+                lines.append(f"🔄 {r['What it unlocks']} ({r['Progress']:.0%}). Needs: {r['What is needed'][0].lower() + r['What is needed'][1:]}")
+            else:
+                lines.append(f"⏳ {r['What it unlocks']}. Needs: {r['What is needed'][0].lower() + r['What is needed'][1:]}")
+        st.markdown("\n\n".join(lines))
+        st.caption("Ready means enough data to rely on. This is about the data, not a grade for the pilot.")
 
 
 def _readiness(data, all_seasons, k):
@@ -452,14 +445,3 @@ def _readiness(data, all_seasons, k):
         out.append({"What it unlocks": name, "What is needed": need, "Progress": prog, "Status": "Ready" if prog >= 1 else ("Building" if prog > 0 else "Later")})
     tbl = pd.DataFrame(out)
     return tbl, int(round(tbl["Progress"].mean() * 100))
-
-
-def _readiness_detail(tbl):
-    colors = {"Ready": "background-color:#D6EFD9;color:#1B5E20;font-weight:700", "Building": "background-color:#FFD9A0;color:#282828;font-weight:700", "Later": "background-color:#E9E9E9;color:#555;font-weight:700"}
-    st.caption("Ready means enough data. Building means partly there. Later means not yet. Share this when someone asks why a chart is empty.")
-    st.dataframe(tbl.style.map(lambda x: colors.get(x, ""), subset=["Status"]), hide_index=True, width="stretch",
-                 column_config={"Progress": st.column_config.ProgressColumn(min_value=0, max_value=1, format="percent")})
-    nxt = tbl[tbl["Status"] != "Ready"]
-    if not nxt.empty:
-        st.caption(f"Next to unlock: {nxt.iloc[0]['What it unlocks'].lower()}. Needs: {nxt.iloc[0]['What is needed'][0].lower() + nxt.iloc[0]['What is needed'][1:]}.")
-    st.caption("A statistical risk model needs far more departures than a single chapter usually has, so this app uses plain indicator rules that people can read and change.")
