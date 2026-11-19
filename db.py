@@ -368,7 +368,7 @@ def add_tags(response_id, rows, username, escalation=False):
 
 def get_tags():
     _ensure(tags)
-    cols = [tags.c.id, tags.c.response_id, tags.c.theme, tags.c.valence, tags.c.quote, tags.c.aggregate_only, tags.c.escalation, tags.c.by_user,
+    cols = [tags.c.id, tags.c.response_id, tags.c.theme, tags.c.valence, tags.c.quote, tags.c.aggregate_only, tags.c.escalation, tags.c.confidence, tags.c.by_user,
             responses.c.participant_code, responses.c.season, responses.c.ts, responses.c.question_id]
     with engine().connect() as c:
         rows = c.execute(select(*cols).select_from(tags.join(responses, tags.c.response_id == responses.c.id))).mappings()

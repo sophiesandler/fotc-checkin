@@ -50,7 +50,7 @@ def attention_items():
     """Return a list of (count, text, page key, urgent). Only items with something to do are returned.
     Transcription and tagging are automatic, so answers are never listed just for being unread."""
     items = []
-    q = _safe(pl.review_items, dict(flags=[], checks=[], problems=[]))
+    q = _safe(pl.review_items, dict(flags=[], checks=[], transcripts=[], problems=[]))
 
     open_flags = [f for f in q["flags"] if not f["handled"]]
     if open_flags:
@@ -66,6 +66,10 @@ def attention_items():
     if q["checks"]:
         n = len(q["checks"])
         items.append((n, f"{n} answer{'s' if n != 1 else ''} the automatic steps could not finish, or the AI asked a person to check.", "review", False))
+
+    if q.get("transcripts"):
+        n = len(q["transcripts"])
+        items.append((n, f"{n} transcript{'s' if n != 1 else ''} to check (very short, repeated, silent, or no theme found).", "review", False))
 
     def _unfinished():
         sess = pd.DataFrame(db.get_sessions())

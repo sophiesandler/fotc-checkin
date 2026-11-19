@@ -35,6 +35,19 @@ def build_session(questions, session_type, quarter, first_year):
     return out
 
 
+def is_required(q):
+    """A required question is one the Mentor is asked once more about before skipping it (a soft requirement: they can still skip).
+    Spoken questions are required unless the wording starts with "Optional". A question can also carry an explicit "required": true or false."""
+    if "required" in q:
+        return bool(q["required"])
+    return q.get("type") == "Spoken" and not str(q.get("text", "")).strip().lower().startswith("optional")
+
+
+# how short is "too short" for a required spoken answer (checked once, then the Mentor decides)
+MIN_ANSWER_SECONDS = 10
+MIN_ANSWER_WORDS = 15
+
+
 def rating_choices(options):
     return ["1", "2", "3", "4", "5"] + [e.strip() for e in re.findall(r"\(or ([^)]+)\)", options or "")]
 

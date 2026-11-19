@@ -209,11 +209,31 @@ def _check_card(c, r, qtext, codebook, ver, user):
             _flash("Cleared.")
 
 
+def _transcript_card(c, r, qtext, codebook, ver, user):
+    """The purple flag: the transcript looks off, so a person should listen and confirm or fix it."""
+    rid = int(r["id"])
+    with st.container(border=True):
+        st.markdown(f"🟣 **Check transcript:** {c['detail']}  \n<span style='color:#555'>{r['mentor']} · {r['season']} · {r['qid']} · answer #{rid}</span>", unsafe_allow_html=True)
+        st.caption(qtext)
+        _recording_and_transcript(r, user, "q_")
+        if r["text"]:
+            st.markdown("**Themes**")
+            _themes(r, qtext, codebook, ver, user, "q_")
+        if st.button("The transcript is fine (mark as checked)", key=f"q_pk_{rid}", type="primary"):
+            db.upsert_review(rid, user["username"], True, False, "")
+            db.log(user["username"], "checked a transcript", f"response {rid}")
+            note = "Marked as checked."
+            if r["audio_note"] == "recorded" and tr.retention() == "after_read":
+                db.delete_audio(rid)
+                note = "Marked as checked. The recording was deleted, as set in Settings."
+            _flash(note)
+
+
 # ---------------------------------------------------------------- page
 def page_review():
     user = require("admin")
     st.title("Review queue")
-    ui.section("Only what needs a person", "Every answer is transcribed and tagged automatically. This page shows only answers the AI flagged for support, and anything the automatic steps could not finish.")
+    ui.section("Only what needs a person", "Every answer is transcribed and tagged automatically. This page shows only answers the AI flagged for support, anything the automatic steps could not finish, and transcripts that look off.")
     st.warning("Individual answers are confidential. Use them only to offer support, never to evaluate anyone. Do not share Mentor names with supervisors.")
     msg = st.session_state.pop("flash", None)
     if msg:
@@ -233,16 +253,18 @@ def page_review():
     done_flags = [f for f in q["flags"] if f["handled"]]
     n_done = int(df["status"].isin(["Tagged", "Tagged (auto)"]).sum()) if len(df) else 0
 
-    c = st.columns(3)
+    c = st.columns(4)
     c[0].metric("Support flags to follow up", len(open_flags))
     c[1].metric("Need a quick check", len(q["checks"]))
-    c[2].metric("Processed automatically", f"{n_done} of {len(df)}")
+    c[2].metric("Transcripts to check", len(q["transcripts"]))
+    c[3].metric("Processed automatically", f"{n_done} of {len(df)}")
+    st.caption("🔴 Support flag: the AI found a concern.  🟠 / 🛠️ Quick check: the AI asked, or the automatic steps stalled.  🟣 Check transcript: the written version may be wrong.")
 
     # ---- is the automation itself working?
     if q["problems"]:
         st.error("Automatic processing is not fully working, so answers may pile up here.  \n" + "  \n".join(q["problems"]))
         _link("settings", "Open Settings", ":material/settings:")
-    if len(rows) and not q["problems"] and not open_flags and not q["checks"]:
+    if len(rows) and not q["problems"] and not open_flags and not q["checks"] and not q["transcripts"]:
         st.success("Nothing needs a person right now. The automatic steps are working.")
     elif not rows:
         st.info("No spoken answers yet. They will be processed automatically as Mentors finish check-ins.")
@@ -265,6 +287,14 @@ def page_review():
     for ck in q["checks"]:
         r = by_id[ck["id"]]._asdict()
         _check_card(ck, r, _qtext(r, qtexts_now), codebook, codebook_ver, user)
+
+    # ---- transcripts that look off (purple)
+    ui.section("Check transcript", "Purpose: recorded answers whose written version may be wrong (very short, repeated, silent, or no theme found), plus a small routine sample. How to use: listen, fix the text if needed, then mark it as checked.", level=3)
+    if not q["transcripts"]:
+        st.caption("No transcripts to check.")
+    for tc in q["transcripts"]:
+        r = by_id[tc["id"]]._asdict()
+        _transcript_card(tc, r, _qtext(r, qtexts_now), codebook, codebook_ver, user)
 
     # ---- retry everything now
     with st.expander("Retry the automatic steps now"):

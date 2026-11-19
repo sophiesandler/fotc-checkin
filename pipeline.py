@@ -277,6 +277,44 @@ def _age_minutes(ts):
         return 0
 
 
+# ---------------------------------------------------------------- "check this transcript" rules (the purple flag)
+# Fixed, readable rules that do not depend on the AI's own judgment. They apply only to answers a Mentor recorded by voice.
+SILENCE_WORDS = {"thank you", "thank you very much", "thanks", "thanks for watching", "thank you for watching", "you", "bye", "okay", "ok", "so"}
+
+
+def _norm(t):
+    return re.sub(r"[^a-z' ]+", " ", (t or "").lower()).strip()
+
+
+def transcript_reasons(text, tag_rows, result):
+    """Plain-language reasons a person should look at this transcript. An empty list means nothing looks off.
+    tag_rows: this answer's tags (each may have a confidence). result: the processing result ('no_themes' when the AI found no theme)."""
+    reasons = []
+    t = (text or "").strip()
+    words = t.split()
+    n_min = int(db.get_setting("transcript_min_words", "12") or 12)
+    norm = " ".join(_norm(t).split())
+    if norm in SILENCE_WORDS:
+        reasons.append("It says only '%s', which is typical of a silent or empty recording." % t.strip(" .!"))
+    elif len(words) < n_min:
+        reasons.append("Very short transcript (%d words)." % len(words))
+    sents = [" ".join(_norm(x).split()) for x in re.split(r"[.!?]+", t)]
+    sents = [x for x in sents if len(x.split()) >= 4]
+    if len(sents) != len(set(sents)):
+        reasons.append("A sentence is repeated, which can mean a transcription glitch.")
+    if result == "no_themes":
+        reasons.append("The AI found no theme in this answer.")
+    elif tag_rows and all((x.get("confidence") or "").lower() == "low" for x in tag_rows):
+        reasons.append("The AI was not confident in any theme.")
+    return reasons
+
+
+def spot_check(rid):
+    """A steady 1-in-N sample of ordinary answers for a person to read, so confident but wrong tags are not invisible. Off when set to 0."""
+    pct = int(db.get_setting("spot_check_pct", "10") or 0)
+    return pct > 0 and (int(rid) * 7919) % 100 < pct
+
+
 # ---------------------------------------------------------------- the review queue
 def review_items(grace=10):
     """Everything a person needs to look at. Nothing else is ever put in front of the admin.
@@ -291,7 +329,22 @@ def review_items(grace=10):
     problems = automation_problems()
     tr_on = db.get_setting("auto_transcribe", "No") == "Yes" and bool(tr.providers())
     tag_on = db.get_setting("auto_tag", "No") == "Yes" and bool(tagging_providers())
-    flags, checks = [], []
+    flags, checks, transcripts = [], [], []
+    tag_by = {}
+    for t_ in db.get_tags():
+        tag_by.setdefault(t_["response_id"], []).append(t_)
+    voice = ("recorded", "deleted")
+
+    def purple(base, r, text, result):
+        """A recorded answer whose transcript a person should look at (only if nobody has checked it yet)."""
+        if r["audio_note"] not in voice or not text or base["id"] in handled:
+            return
+        why = transcript_reasons(text, tag_by.get(base["id"], []), result)
+        if not why and result != "no_themes" and spot_check(base["id"]):
+            why = ["Routine spot check (a steady sample of ordinary answers)."]
+        if why:
+            transcripts.append(dict(base, kind="Check the transcript", detail=" ".join(why)))
+
     for r in rows:
         rid = r["id"]
         p = proc.get(rid) or {}
@@ -306,6 +359,8 @@ def review_items(grace=10):
                 checks.append(dict(base, kind="The AI asked a person to check this answer", detail=p.get("detail", "")))
             continue
         if p.get("result") in ("no_themes", "dismissed"):
+            if p.get("result") == "no_themes":
+                purple(base, r, text, "no_themes")
             continue
         if not text and r["audio_note"] == "recorded":
             if p.get("result") == "failed":
@@ -317,8 +372,10 @@ def review_items(grace=10):
                 checks.append(dict(base, kind="Tagging failed", detail=p.get("detail", "")))
             elif tag_on and age > grace:
                 checks.append(dict(base, kind="Still not tagged", detail="It has been waiting more than %d minutes." % grace))
+        elif text:
+            purple(base, r, text, p.get("result", ""))
     flags.sort(key=lambda x: x["handled"])
-    return dict(flags=flags, checks=checks, problems=problems)
+    return dict(flags=flags, checks=checks, transcripts=transcripts, problems=problems)
 
 
 # ---------------------------------------------------------------- self-healing: retry what got stuck

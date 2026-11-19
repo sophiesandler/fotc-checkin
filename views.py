@@ -84,7 +84,7 @@ def page_checkin():
             st.info(f"You have already completed the {season} check-in. This one will be saved as an additional check-in." if (repeat_ok and not allow_repeat)
                     else f"You have already completed the {season} check-in. Repeats are turned on for practice, so you can take it again.")
         extra = f", then a {len(pilot)}-question feedback screen" if pilot else ""
-        st.markdown(f"**{ct.type_label(stype)} for {season}:** {len(main)} questions, about {minutes} minute{'s' if minutes != 1 else ''}{extra}. You can skip any question.")
+        st.markdown(f"**{ct.type_label(stype)} for {season}:** {len(main)} questions, about {minutes} minute{'s' if minutes != 1 else ''}{extra}. The spoken questions help us most, so we will ask once more before you skip one. You can still skip any question.")
         st.markdown(db.get_setting("consent_text"))
         agreed = st.checkbox("I understand and want to continue", key="ci_agree")
         if st.button("Start", type="primary", disabled=not agreed):
@@ -162,10 +162,35 @@ def page_checkin():
         ci["idx"] += 1
         db.update_session(ci["sid"], ci["idx"], ci["idx"] >= len(session))
 
+    required = q["type"] == "Spoken" and ct.is_required(q)
+    secs, words = _answer_size(audio, text) if q["type"] == "Spoken" else (0.0, 0)
+    has_answer = (audio is not None) or bool((text or "").strip())
+    nudge = ci.get("nudge")
+    if nudge and nudge.get("i") == i:
+        # asked once: a short, kind question, and the Mentor decides
+        st.warning(nudge["msg"])
+        b1, b2, _ = st.columns([1.4, 1.6, 2.2])
+        if b1.button("Answer now" if nudge["kind"] == "skip" else "Add more", type="primary", key="ndb" + k):
+            ci.pop("nudge", None); st.rerun()
+        if b2.button("Skip anyway" if nudge["kind"] == "skip" else "Keep it as it is", key="ndg" + k):
+            ci.pop("nudge", None)
+            save(nudge["kind"] == "skip"); st.rerun()
+        return
+
     c1, c2, _ = st.columns([1, 1.7, 2.6])
     if c1.button("Finish" if last else "Next", type="primary", key="n" + k):
+        if required and not has_answer:
+            ci["nudge"] = dict(i=i, kind="skip", msg="This question helps us most. Would you like to answer it? You can still skip it.")
+            st.rerun()
+        if required and has_answer and secs < ct.MIN_ANSWER_SECONDS and words < ct.MIN_ANSWER_WORDS:
+            ci["nudge"] = dict(i=i, kind="short", msg=("That recording is only about %d seconds. " % round(secs) if audio is not None else "That is a short answer. ")
+                               + "A little more, around 30 to 60 seconds, helps us most. Would you like to add more?")
+            st.rerun()
         save(False); st.rerun()
     if c2.button("Skip this question", key="k" + k):
+        if required:
+            ci["nudge"] = dict(i=i, kind="skip", msg="This question helps us most. Would you like to answer it? You can still skip it.")
+            st.rerun()
         save(True); st.rerun()
 
 
@@ -255,6 +280,20 @@ def _unscheduled(qs):
     return [q["id"] for q in qs if q["active"] and q["block"] == "Rotating" and not q["quarters"] and not q["first_year_always"]]
 
 
+def _answer_size(audio, text):
+    """(seconds of recording, number of typed words). Used only to ask a Mentor once whether they want to add more."""
+    import io
+    import wave
+    secs = 0.0
+    if audio is not None:
+        try:
+            with wave.open(io.BytesIO(audio.getvalue())) as w:
+                secs = w.getnframes() / float(w.getframerate())
+        except Exception:
+            secs = 0.0
+    return secs, len((text or "").split())
+
+
 def _estimate_minutes(session):
     sec = 30 + sum(SECONDS[q["type"]] for q in session if q["block"] != "Pilot feedback")      # the pilot feedback screen is counted separately
     return round(sec / 60, 1)
@@ -265,6 +304,7 @@ def page_questions():
     ver, pub = db.get_published("questions")
     st.title("Questions")
     _flash()
+    st.caption("Spoken questions are asked once more before a Mentor can skip them, unless the question starts with \"Optional\". Mentors can still skip.")
     if user["role"] != "admin":
         st.caption(f"Published version {ver}. Only the program admin can change questions.")
         df = pd.DataFrame(pub)
@@ -677,6 +717,11 @@ def page_settings():
     keep = list(ct.RETENTION)
     ret = st.selectbox("What happens to recordings?", keep, index=keep.index(db.get_setting("audio_retention", "after_read")) if db.get_setting("audio_retention", "after_read") in keep else 1,
                        format_func=ct.RETENTION.get, help="The consent text says recordings are deleted after transcription. Pick the rule that matches what you promised Mentors.")
+    c_a, c_b = st.columns(2)
+    min_w = c_a.number_input("Flag a recorded answer as 'check transcript' if it has fewer than this many words", 0, 100, int(db.get_setting("transcript_min_words", "12") or 12),
+                             help="Very short transcripts are often silence or a recording problem. They show in the Review queue with a purple flag.")
+    spot = c_b.number_input("Routine spot check: share of ordinary recorded answers a person reads (%)", 0, 100, int(db.get_setting("spot_check_pct", "10") or 0),
+                            help="The AI can be confident and wrong. A steady sample lets a person catch that. Set to 0 to turn it off.")
     with st.expander("How to set up automatic transcription"):
         st.markdown("**Free option (recommended to start): Groq**\n"
                     "1. Go to console.groq.com and create an account. No credit card is needed.\n"
@@ -692,7 +737,7 @@ def page_settings():
     thanks = st.text_area("Thank-you message", db.get_setting("thanks_text"), height=140)
     st.caption("Friends of the Children staff and legal review should approve the consent text before any real use.")
     if st.button("Save settings", type="primary"):
-        for key, val in (("allow_repeat", "Yes" if rep_.startswith("Yes") else "No"), ("auto_transcribe", auto_t), ("auto_tag", auto_g), ("audio_retention", ret), ("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
+        for key, val in (("allow_repeat", "Yes" if rep_.startswith("Yes") else "No"), ("auto_transcribe", auto_t), ("auto_tag", auto_g), ("audio_retention", ret), ("transcript_min_words", str(int(min_w))), ("spot_check_pct", str(int(spot))), ("app_title", title), ("program_stage", stage), ("current_season", seasons.label(season_name, season_year)), ("current_quarter", seasons.number(season_name)), ("min_group", int(k)), ("consent_text", consent), ("thanks_text", thanks)):
             db.set_setting(key, val)
         db.log(me["username"], "changed settings")
         st.session_state.flash = "Settings saved."; st.rerun()
@@ -709,7 +754,7 @@ def page_audit():
 
 GUIDE = {
     "mentor": """### What this is
-A short check-in about your work. The first screen tells you how many questions there are and about how long it takes. Every question can be skipped.
+A short check-in about your work. The first screen tells you how many questions there are and about how long it takes. Every question can be skipped, but we ask once more before you skip a spoken one.
 
 ### How to take it
 1. Read the welcome note and tick the box to start.
@@ -737,7 +782,7 @@ Use the switch at the top of each page to look at live check-ins or the clearly 
 Open **Themes and rules** to edit themes (indicators), example phrases, keywords, and rules. The tagging instructions rebuild from it automatically.
 
 ### Review queue
-Transcription and tagging run by themselves once they are set up in **Settings**, so you do not read every answer. Open **Review queue** only when it shows something: an answer the AI flagged as needing support (follow up, then mark it followed up), or an answer the automatic steps could not finish (check the transcript against the recording, or try again). If automatic processing stops working, the Home screen and the queue both say so.
+Transcription and tagging run by themselves once they are set up in **Settings**, so you do not read every answer. Open **Review queue** only when it shows something: an answer the AI flagged as needing support (follow up, then mark it followed up), or an answer the automatic steps could not finish (check the transcript against the recording, or try again), or a 🟣 **Check transcript** item, where the written version may be wrong (very short, repeated, silent, or no theme found) or was picked for a routine spot check (listen, fix the text if needed, then mark it as checked). If automatic processing stops working, the Home screen and the queue both say so.
 
 ### Pilot year
 During year one, start on **Pilot year**: check that the check-in works (participation, time, skipped questions), see what Mentors said, and record what you did about each concern under **You said, we did**.
