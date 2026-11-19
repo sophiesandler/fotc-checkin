@@ -193,6 +193,8 @@ def page_checkin():
             st.rerun()
         save(True); st.rerun()
 
+    if q["type"] == "Spoken":
+        st.caption("🎧 Please make sure you are in a quiet space when you record, so we can understand your answer.")
 
 # =====================================================================  LEADERSHIP OVERVIEW
 def _question_text_map():
