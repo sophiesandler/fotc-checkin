@@ -1,6 +1,8 @@
 """Review queue. Transcription and tagging run on their own. This page shows only what needs a person:
 answers the AI flagged for support or asked a person to check, and answers the automation could not finish.
 The full list of answers is still here, but tucked away as an optional lookup."""
+import re
+
 from content import plain
 import pandas as pd
 import streamlit as st
@@ -119,25 +121,85 @@ def _themes(r, qtext, codebook, codebook_ver, user, kp):
         with st.spinner("Tagging..."):
             ok_, m_ = _tag_one(rid, r["qid"], qtext, text, user["username"], codebook, codebook_ver)
         _flash("Tagged. Check the themes below." if ok_ else m_)
-    with st.expander("Tag by hand instead", expanded=False):
-        st.caption("Open a new Claude chat. First paste the tagging instructions (Themes and rules > Tagging instructions > Download). Then paste this message and send it.")
-        st.code(_message(r["qid"], qtext, rid, text), language="text")
-        reply = st.text_area("Paste Claude's reply here", key=f"{kp}rp_{rid}", height=140)
-        if st.button("Check and save tags", type="primary", key=f"{kp}cs_{rid}"):
-            errs, tags, flags = parse_reply(reply, text, {t["id"] for t in codebook["themes"]})
-            if errs:
-                for e in errs:
-                    st.error(e)
-            elif not tags and not flags:
-                st.warning("The reply has no themes (for example, a very short answer). Nothing was saved.")
+    with st.expander("Tag by hand", expanded=not mine):
+        _hand_tag(rid, text, codebook, user, kp)
+
+
+FLAG_KINDS = {
+    "personal_safety": "A threat to the Mentor's own safety",
+    "harassment_discrimination": "Harassment or discrimination",
+    "child_welfare": "A child's safety or wellbeing (may need a report)",
+    "self_harm_or_crisis": "Self-harm or crisis",
+}
+
+
+def _sentences(text):
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text.strip()) if p.strip()]
+    return parts or [text.strip()]
+
+
+def _hand_tag(rid, text, codebook, user, kp):
+    """A person tags an answer directly: pick the theme, say positive or negative, and pick the words that show it."""
+    themes = codebook["themes"]
+    ids = [t["id"] for t in themes]
+    by_id = {t["id"]: t for t in themes}
+    sents = _sentences(text)
+    st.caption("Pick the theme, say whether it is positive or negative for the Mentor, and pick the words from the answer that show it. "
+               "Add a second theme only if the Mentor clearly says it. Saving replaces any tags this answer already has.")
+    chosen = []
+    for n in (1, 2):
+        st.markdown(f"**Theme {n}**" + (" (optional)" if n == 2 else ""))
+        c1, c2 = st.columns([2, 1])
+        tid = c1.selectbox(f"Theme {n}", ids, index=None, placeholder="Choose a theme", key=f"{kp}h{n}t_{rid}", label_visibility="collapsed",
+                           format_func=lambda x: f"{x}  {by_id[x]['name']}")
+        val = c2.selectbox(f"Valence {n}", ["Positive", "Negative", "Mixed/Neutral"], index=None, placeholder="Positive or negative?",
+                           key=f"{kp}h{n}v_{rid}", label_visibility="collapsed")
+        if tid:
+            st.caption(by_id[tid]["definition"])
+        pick = st.selectbox(f"Words that show theme {n}", sents, index=None, placeholder="Pick the sentence that shows this theme",
+                            key=f"{kp}h{n}q_{rid}", label_visibility="collapsed")
+        own = st.text_input(f"Or paste an exact phrase for theme {n}", key=f"{kp}h{n}o_{rid}", placeholder="Optional: a shorter exact phrase from the answer")
+        chosen.append((n, tid, val, (own or "").strip() or pick))
+    flag = st.checkbox("This answer describes a safety or welfare concern that needs follow-up", key=f"{kp}hf_{rid}",
+                       help="Only when the Mentor clearly describes one. General stress, a hard week, or background hardship is not a flag.")
+    kind = None
+    if flag:
+        kind = st.selectbox("What kind of concern?", list(FLAG_KINDS), format_func=FLAG_KINDS.get, key=f"{kp}hk_{rid}")
+        st.caption("Flagged answers appear on the Support flags list. Follow Friends of the Children's procedure.")
+    b1, b2, _ = st.columns([1, 1.6, 2])
+    if b1.button("Save tags", type="primary", key=f"{kp}hs_{rid}"):
+        errs, rows = [], []
+        for n, tid, val, quote in chosen:
+            if not tid:
+                continue
+            if not val:
+                errs.append(f"Theme {n}: choose positive, negative, or mixed.")
+            if not quote:
+                errs.append(f"Theme {n}: pick the words from the answer that show it.")
+            elif pl.norm(quote) not in pl.norm(text):
+                errs.append(f"Theme {n}: those words are not an exact excerpt of the answer. Pick a sentence from the list, or copy the words exactly.")
+            rows.append(dict(theme=tid, valence=val, quote=quote, aggregate_only=tid == "T10", confidence="High"))
+        if len({r_["theme"] for r_ in rows}) < len(rows):
+            errs.append("Pick two different themes, or leave Theme 2 empty.")
+        if not rows:
+            errs.append("Choose at least one theme. If none fits, use \"No theme fits this answer\".")
+        if flag and not rows:
+            errs.append("To save a flag, also choose the theme that fits best (\"Other / Emerging\" if none does).")
+        if errs:
+            for e in errs:
+                st.error(e)
+        else:
+            db.add_tags(rid, rows, user["username"], escalation=bool(flag))
+            if flag:
+                db.set_proc(rid, "tag", "flag", (kind or "").replace("_", " "))
             else:
-                db.add_tags(rid, tags, user["username"], escalation=bool(flags))
-                if flags:
-                    db.set_proc(rid, "tag", "flag", ", ".join(str(f.get("category", "")).replace("_", " ") for f in flags))
-                else:
-                    db.clear_proc(rid)
-                db.log(user["username"], "saved tags", f"response {rid}: {len(tags)} tag(s), escalation={bool(flags)}")
-                _flash("Saved. This answer raised a safety or welfare flag. Follow Friends of the Children's procedure." if flags else f"Saved {len(tags)} tag(s).")
+                db.clear_proc(rid)
+            db.log(user["username"], "tagged by hand", f"response {rid}: {len(rows)} tag(s), escalation={bool(flag)}")
+            _flash("Saved. This answer raised a safety or welfare flag. Follow Friends of the Children's procedure." if flag else f"Saved {len(rows)} tag{'s' if len(rows) != 1 else ''}.")
+    if b2.button("No theme fits this answer", key=f"{kp}hn_{rid}"):
+        db.set_proc(rid, "tag", "dismissed", "Checked by a person: no theme fits")
+        db.log(user["username"], "marked no theme fits", f"response {rid}")
+        _flash("Saved. This answer will not be counted in any theme.")
 
 
 def _share(r, user, kp):
@@ -256,7 +318,7 @@ def page_review():
     c = st.columns(4)
     c[0].metric("Support flags to follow up", len(open_flags))
     c[1].metric("Need a quick check", len(q["checks"]))
-    c[2].metric("Transcripts to check", len(q["transcripts"]))
+    c[2].metric("Transcripts to check", len(q.get("transcripts", [])))
     c[3].metric("Processed automatically", f"{n_done} of {len(df)}")
     st.caption("🔴 Support flag: the AI found a concern.  🟠 / 🛠️ Quick check: the AI asked, or the automatic steps stalled.  🟣 Check transcript: the written version may be wrong.")
 
@@ -264,7 +326,7 @@ def page_review():
     if q["problems"]:
         st.error("Automatic processing is not fully working, so answers may pile up here.  \n" + "  \n".join(q["problems"]))
         _link("settings", "Open Settings", ":material/settings:")
-    if len(rows) and not q["problems"] and not open_flags and not q["checks"] and not q["transcripts"]:
+    if len(rows) and not q["problems"] and not open_flags and not q["checks"] and not q.get("transcripts", []):
         st.success("Nothing needs a person right now. The automatic steps are working.")
     elif not rows:
         st.info("No spoken answers yet. They will be processed automatically as Mentors finish check-ins.")
@@ -290,9 +352,9 @@ def page_review():
 
     # ---- transcripts that look off (purple)
     ui.section("Check transcript", "Purpose: recorded answers whose written version may be wrong (very short, repeated, silent, or no theme found), plus a small routine sample. How to use: listen, fix the text if needed, then mark it as checked.", level=3)
-    if not q["transcripts"]:
+    if not q.get("transcripts", []):
         st.caption("No transcripts to check.")
-    for tc in q["transcripts"]:
+    for tc in q.get("transcripts", []):
         r = by_id[tc["id"]]._asdict()
         _transcript_card(tc, r, _qtext(r, qtexts_now), codebook, codebook_ver, user)
 
